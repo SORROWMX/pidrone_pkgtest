@@ -172,7 +172,7 @@ class PIDaxis():
             self.vertical_velocity = 0.7 * instant_velocity + 0.3 * self.vertical_velocity
         
         # Determine if drone is on the ground
-        if current_height < 0.05 and self.vertical_velocity <= 0:
+        if current_height <= 0.05 and self.vertical_velocity <= 0:
             self.on_ground = True
         else:
             self.on_ground = False
