@@ -33,6 +33,10 @@ class StateEstimator(object):
     def __init__(self, primary, others, ir_throttled=False, imu_throttled=False,
                  optical_flow_throttled=False, camera_pose_throttled=False,
                  sdim=1, student_ukf=False, ir_var=None, loop_hz=None):
+        # Initialize ROS node first
+        node_name = os.path.splitext(os.path.basename(__file__))[0]
+        rospy.init_node(node_name)
+        
         self.state_msg = State()
         
         self.ir_throttled = ir_throttled
@@ -48,13 +52,17 @@ class StateEstimator(object):
         self.estimators = list(self.other_estimators)
         self.estimators.append(self.primary_estimator)
         
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
         student_project_pkg_dir = 'pidrone_project2_ukf'
         pidrone_pkg_dir = 'pidrone_pkg'
         
+        program_str = ''
         if student_ukf:
             program_str = 'rosrun ' + student_project_pkg_dir + ' StateEstimators/student_'
+            state_estimator_dir = program_str
         else:
-            program_str = 'rosrun ' + pidrone_pkg_dir + ' scripts/StateEstimators/'
+            state_estimator_dir = os.path.join(current_dir, "StateEstimators")
             
         # TODO: Test this IR variance argument passing
         # TODO: Test if it is necessary to include "scripts/" in this command.
@@ -65,10 +73,10 @@ class StateEstimator(object):
             sim_cmd += ' --ir_var '+str(ir_var)
         
         self.process_cmds_dict = {
-                'ema': 'rosrun pidrone_pkg scripts/StateEstimators/state_estimator_ema.py',
-                'ukf2d': '{}state_estimator_ukf_2d.py'.format(program_str),
-                'ukf7d': '{}state_estimator_ukf_7d.py'.format(program_str),
-                'ukf12d': 'rosrun pidrone_pkg scripts/StateEstimators/state_estimator_ukf_12d.py',
+                'ema': 'python "{}/state_estimator_ema.py"'.format(state_estimator_dir),
+                'ukf2d': 'python "{}/state_estimator_ukf_2d.py"'.format(state_estimator_dir),
+                'ukf7d': 'python "{}/state_estimator_ukf_7d.py"'.format(state_estimator_dir),
+                'ukf12d': 'python "{}/state_estimator_ukf_12d.py"'.format(state_estimator_dir),
                 'mocap': 'rosrun pidrone_pkg scripts/state_estimator_mocap.py',  # TODO: Implement this
                 'simulator': sim_cmd
         }
@@ -97,14 +105,10 @@ class StateEstimator(object):
 
         self.setup_ukf_with_ground_truth()
         self.start_estimator_subprocess_cmds()
-        self.initialize_ros()
-
-    def initialize_ros(self):
-        node_name = os.path.splitext(os.path.basename(__file__))[0]
-        rospy.init_node(node_name)
-
+        
+        # No need to call initialize_ros() since we already initialized at the beginning
         rospy.spin()
-    
+
     def start_estimator_subprocess_cmds(self):
         cmd = self.process_cmds_dict[self.primary_estimator]
         cmd = self.append_throttle_flags(cmd, self.primary_estimator)
@@ -291,82 +295,44 @@ def check_positive_float_duration(val):
         
 
 def main():
-    parser = argparse.ArgumentParser(description=('The state estimator node '
-                'can provide state estimates using a 1D UKF (2D state vector), '
-                'a 3D UKF (7D or 12D state vector), an EMA, MoCap, or '
-                'simulated ground truth data. The default is the EMA. The '
-                'default UKF is the UKF with 2D state vector. The primary '
-                'state estimator determines what is published to '
-                '/pidrone/state, except that an incomplete state estimator '
-                'like the 2D UKF will also use EMA estimates to populate x and '
-                'y position, for example.'))
-                
-    arg_choices = ['ema', 'ukf2d', 'ukf7d', 'ukf12d', 'mocap', 'simulator']
+    # Use rospy.myargv() to filter out ROS-specific args
+    import sys
+    filtered_argv = rospy.myargv(argv=sys.argv)
     
-    parser.add_argument('--primary', '-p',
-                        choices=arg_choices,
-                        default='ema',
-                        help='Select the primary state estimation method')
-    parser.add_argument('--others', '-o',
-                        choices=arg_choices,
-                        nargs='+',
-                        help=('Select other state estimation nodes to run '
-                              'alongside the primary state estimator, e.g., '
-                              'for visualization or debugging purposes'))
-                              
-    # Arguments to determine if the throttle command is being used. E.g.:
-    #   rosrun topic_tools throttle messages /pidrone/infrared 40.0
-    # If one of these is passed in, it will act on all state estimators that can
-    # take it in as a command-line argument.
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--primary', '-p', default='ukf7d',
+                        choices=['ema', 'ukf2d', 'ukf7d', 'ukf12d', 'mocap', 'simulator'],
+                        help="""Specify the primary state estimator.
+                                Default: %(default)s""")
+    parser.add_argument('--others', '-o', nargs='+',
+                        choices=['ema', 'ukf2d', 'ukf7d', 'ukf12d', 'mocap', 'simulator'],
+                        help="""Other state estimators to run.
+                                Default: none""")
     parser.add_argument('--ir_throttled', action='store_true',
-                        help=('Use throttled infrared topic /pidrone/infrared_throttle'))
+                        help='Enable throttling of IR data')
     parser.add_argument('--imu_throttled', action='store_true',
-                        help=('Use throttled IMU topic /pidrone/imu_throttle'))
+                        help='Enable throttling of IMU data')
     parser.add_argument('--optical_flow_throttled', action='store_true',
-                        help=('Use throttled optical flow topic /pidrone/picamera/twist_throttle'))
+                        help='Enable throttling of optical flow data')
     parser.add_argument('--camera_pose_throttled', action='store_true',
-                        help=('Use throttled camera pose topic /pidrone/picamera/pose_throttle'))
-                        
+                        help='Enable throttling of camera pose data')
     parser.add_argument('--sdim', default=1, type=int, choices=[1, 2, 3],
-                        help=('Number of spatial dimensions in which to '
-                              'simulate the drone\'s motion, if running the '
-                              'drone simulator (default: 1)'))
-                              
+                        help='Number of spatial dimensions for the simulator')
     parser.add_argument('--student_ukf', action='store_true',
-                        help=('Use student UKF'))
-    # TODO: Test out the --ir_var flag
+                        help='Use student UKF implementation')
     parser.add_argument('--ir_var', type=float,
-                        help=('IR sensor variance to use in 1D simulation'))
-                        
-    parser.add_argument('--loop_hz', '-hz', default=30.0,
-                        type=check_positive_float_duration,
-                        help=('Frequency at which to run the predict-update '
-                              'loop of the UKF (default: 30)'))
-                              
-    args = parser.parse_args()
+                        help='Override IR variance in the simulator')
+    parser.add_argument('--loop_hz', type=check_positive_float_duration,
+                        help='The rate of state estimation in Hz')
+    
+    # Parse known arguments and ignore the rest (ROS args)
+    args, unknown = parser.parse_known_args(filtered_argv)
     
     try:
-        se = StateEstimator(primary=args.primary,
-                            others=args.others,
-                            ir_throttled=args.ir_throttled,
-                            imu_throttled=args.imu_throttled,
-                            optical_flow_throttled=args.optical_flow_throttled,
-                            camera_pose_throttled=args.camera_pose_throttled,
-                            sdim=args.sdim,
-                            student_ukf=args.student_ukf,
-                            ir_var=args.ir_var,
-                            loop_hz=args.loop_hz)
-    except Exception as e:
-        print(e)
-    finally:
-        # Terminate the subprocess calls. Note, however, that if Ctrl-C is
-        # entered in stdin, it seems that the subprocesses also get the Ctrl-C
-        # input and are terminating based on KeyboardInterrupt
-        print('Terminating subprocess calls...')
-        for process_name, process in se.processes:
-            print('Terminating:', process_name)
-            process.terminate()
-        print('Done.')
+        # StateEstimator constructor now handles initialization and rospy.spin()
+        StateEstimator(**vars(args))
+    except rospy.ROSInterruptException:
+        pass
 
 
 if __name__ == "__main__":

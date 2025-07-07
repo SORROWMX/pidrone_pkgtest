@@ -31,7 +31,8 @@ class PIDaxis():
         self.previous_height = 0
         self.height_integral = 0
         self.previous_height_error = 0
-        self.last_time = rospy.Time.now()
+        # Initialize last_time to None, will be set on first step call
+        self.last_time = None
         self.is_throttle_controller = False
         
     def reset(self):
@@ -45,6 +46,8 @@ class PIDaxis():
         self.previous_height = 0
         self.height_integral = 0
         self.previous_height_error = 0
+        # Reset last_time to None
+        self.last_time = None
         
     def step(self, err, time_elapsed):
         # Special handling for throttle controller with improved height control logic
@@ -91,8 +94,14 @@ class PIDaxis():
         current_height = TARGET_HEIGHT - err/100.0  # Convert from cm to m
         
         # Calculate height change rate
+        # Initialize last_time if this is the first call
         current_time = rospy.Time.now()
-        dt = (current_time - self.last_time).to_sec()
+        if self.last_time is None:
+            self.last_time = current_time
+            dt = 0.01  # Default small value for first iteration
+        else:
+            dt = (current_time - self.last_time).to_sec()
+            
         self.last_time = current_time
         
         if dt <= 0:
