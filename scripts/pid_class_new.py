@@ -462,7 +462,7 @@ class PID:
                                   0, #0.5/height_factor * battery_factor,
                                   1,
                                   i_range=(-400, 400), control_range=(1100, 1600),
-                                  d_range=(-40, 40), midpoint=1450)  # Changed from 1300 to 1450
+                                  d_range=(-40, 40), midpoint=1300)  # Changed from 1300 to 1450
                  ):
 
         self.trim_controller_cap_plane = 0.05
