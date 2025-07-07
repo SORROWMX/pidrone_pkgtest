@@ -15,4 +15,4 @@ CMakeFiles/
 logs/*
 *.DS_Store
 *.idea/
-
+/raspicam_node-kinetic-dd24

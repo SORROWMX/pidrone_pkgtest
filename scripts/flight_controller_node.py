@@ -201,8 +201,7 @@ class FlightController(object):
         """
         # extract vbat, amperage
         self.board.getData(MultiWii.ANALOG)
-        # Update Battery message:
-        # Значения уже масштабированы в классе MultiWii для INAV (vbat уже в вольтах, amperage в амперах)
+    
         self.battery_message.vbat = self.board.analog['vbat']
         self.battery_message.amperage = self.board.analog['amperage']
 
@@ -293,7 +292,7 @@ class FlightController(object):
             disarm = True
 
         # Just warn if height is too high, but don't disarm
-        if self.range > 0.5:
+        if self.range > 0.65:
             print(('\nWARNING: Drone is flying too high: {:.2f}m').format(self.range))
             # No longer disarming automatically - just warning
             

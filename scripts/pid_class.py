@@ -5,10 +5,10 @@ import rospy
 # Target height to maintain in meters
 TARGET_HEIGHT = 0.5
 
-# PID parameters for height control - fast response
-KP = 90.0  # Proportional coefficient
-KI = 0.1   # Integral coefficient  
-KD = 45.0  # Derivative coefficient
+# PID parameters for height control - tuned for new throttle values
+KP = 80.0   # Reduced for smoother control
+KI = 0.15   # Reduced to prevent oscillation
+KD = 40.0   # Reduced for less aggressive response
 
 #####################################################
 #						PID							#
@@ -89,12 +89,12 @@ class PIDaxis():
         """
         Advanced throttle control with adaptive behavior for height maintenance
         based on height_control_flight.py's calculate_throttle function
+        Simplified to not rely on height change rate calculations
         """
         # Get current height from error (err = TARGET_HEIGHT - current_height)
         current_height = TARGET_HEIGHT - err/100.0  # Convert from cm to m
         
-        # Calculate height change rate
-        # Initialize last_time if this is the first call
+        # Calculate time elapsed since last call
         current_time = rospy.Time.now()
         if self.last_time is None:
             self.last_time = current_time
@@ -107,11 +107,12 @@ class PIDaxis():
         if dt <= 0:
             dt = 0.01  # Safeguard against zero division
             
-        height_change_rate = (current_height - self.previous_height) / dt
+        print("Height: %.2fm, Target: %.2fm" % (current_height, TARGET_HEIGHT))
         
-        # Emergency braking for rapid ascent
-        if current_height > TARGET_HEIGHT * 1.5 or height_change_rate > 0.05:
-            return 1100  # Minimum throttle to quickly descend
+        # Emergency braking only when too high
+        if current_height > TARGET_HEIGHT * 1.75:
+            print("EMERGENCY BRAKING: too high!")
+            return 1400  # Minimum throttle to quickly descend
             
         # Calculate error
         error = TARGET_HEIGHT - current_height
@@ -131,48 +132,52 @@ class PIDaxis():
         i_term = KI * self.height_integral
         d_term = KD * derivative
         
-        # Add rate damping to reduce oscillations
-        rate_term = -100 * height_change_rate
-        
-        # Adaptive control based on position and velocity
         if current_height > TARGET_HEIGHT:
             # Above target height
-            if height_change_rate > 0:
-                # Still rising - aggressive braking
-                base_throttle = 1150  # Adjusted for KV2300 motors
-                throttle_adjustment = p_term + i_term + d_term + rate_term
-                throttle = base_throttle + int(throttle_adjustment * 0.1)
+            height_diff = current_height - TARGET_HEIGHT
+            
+            if height_diff > 0.1: 
+                base_throttle = 1430  # Set to 1410 for descent
+                gain = 0.67
+            else: 
+                base_throttle = 1430  # Set to 1410 for descent
+                gain = 0.76
                 
-                # Extra braking when ascending
-                throttle -= int(height_change_rate * 350)
-            else:
-                # Already descending - gentle control
-                base_throttle = 1275  # Adjusted for KV2300 motors
-                throttle_adjustment = p_term + i_term + d_term + rate_term
-                throttle = base_throttle + int(throttle_adjustment * 0.15)
+            throttle_adjustment = p_term + i_term + d_term
+            throttle = base_throttle + int(throttle_adjustment * gain)
         else:
             # Below target - gentle control
             # Adaptive base throttle based on distance to target
-            height_diff = abs(TARGET_HEIGHT - current_height)
+            height_diff = TARGET_HEIGHT - current_height
             
-            if height_diff > 0.01:
-                # Significant deviation - stronger response
-                base_throttle = 1300  # Adjusted for KV2300 motors
+            if height_diff > 0.3:
+                # Significantly below target - stronger response
+                base_throttle = 1480  # Set to 1480 for takeoff
+                gain = 0.9
+            elif height_diff > 0.1:
+                # Moderately below target
+                base_throttle = 1480  # Set to 1480 for takeoff
                 gain = 0.8
+            elif height_diff > 0.05:
+                # Slightly below target
+                base_throttle = 1450  # Slightly lower
+                gain = 0.7
             else:
-                # Minor deviation - fine tuning
-                base_throttle = 1275  # Adjusted for KV2300 motors
-                gain = 0.6
+                # Very close to target
+                base_throttle = 1430  # Between takeoff and descent values
+                gain = 0.66
                 
-            throttle_adjustment = p_term + i_term + d_term + rate_term
+            throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)
         
         # Smoothly limit throttle range
-        throttle = max(1100, min(throttle, 1500))
+        throttle = max(1380, min(throttle, 1520))  # Narrower range
         
         # Store values for next iteration
         self.previous_height = current_height
         self.previous_height_error = smoothed_error
+        
+        print("Throttle: %d, Error: %.2f, P: %.2f, I: %.2f, D: %.2f" % (throttle, error, p_term, i_term, d_term))
         
         return throttle
 
