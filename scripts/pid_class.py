@@ -6,14 +6,14 @@ import rospy
 TARGET_HEIGHT = 0.75
 
 # PID parameters for height control - tuned for new throttle values
-KP = 60.0   # Оптимизировано для более быстрой реакции
-KI = 0.12   # Оптимизировано для лучшего удержания высоты
-KD = 40.0   # Оптимизировано для лучшего демпфирования
+KP = 60.0   
+KI = 0.12   
+KD = 40.0   
 
-# Параметры для контроля дросселя
-HOVER_THROTTLE = 1450     # Значение дросселя для зависания
-THROTTLE_MIN = 1437       # Минимальное значение дросселя (из анализа)
-THROTTLE_MAX = 1469       # Максимальное значение дросселя (из анализа)
+# Throttle control parameters
+HOVER_THROTTLE = 1450     
+THROTTLE_MIN = 1437       
+THROTTLE_MAX = 1469       
 
 #####################################################
 #						PID							#
@@ -112,8 +112,6 @@ class PIDaxis():
         if dt <= 0:
             dt = 0.01  # Safeguard against zero division
             
-        print("Height: %.2fm, Target: %.2fm" % (current_height, TARGET_HEIGHT))
-        
         # Emergency braking only when too high
         if current_height > TARGET_HEIGHT * 1.4:
             print("EMERGENCY BRAKING: too high!")
@@ -142,10 +140,10 @@ class PIDaxis():
             height_diff = current_height - TARGET_HEIGHT
             
             if height_diff > 0.08: 
-                base_throttle = HOVER_THROTTLE - 8  # Уменьшаем дроссель для снижения
+                base_throttle = HOVER_THROTTLE - 8  # Reduce throttle for descent
                 gain = 0.55
             else: 
-                base_throttle = HOVER_THROTTLE - 3  # Мягкое снижение при небольшом превышении
+                base_throttle = HOVER_THROTTLE - 3  # Gentle descent when slightly above target
                 gain = 0.65
                 
             throttle_adjustment = p_term + i_term + d_term
@@ -157,7 +155,7 @@ class PIDaxis():
             
             if height_diff > 0.2:
                 # Significantly below target - stronger response
-                base_throttle = HOVER_THROTTLE + 10  # Увеличиваем дроссель для подъема
+                base_throttle = HOVER_THROTTLE + 10  # Increase throttle for ascent
                 gain = 0.8
             elif height_diff > 0.08:
                 # Moderately below target
@@ -176,7 +174,7 @@ class PIDaxis():
             throttle = base_throttle + int(throttle_adjustment * gain)
         
         # Smoothly limit throttle range
-        throttle = max(THROTTLE_MIN, min(throttle, THROTTLE_MAX))  # Используем значения из анализа
+        throttle = max(THROTTLE_MIN, min(throttle, THROTTLE_MAX))
         
         # Store values for next iteration
         self.previous_height = current_height
@@ -204,7 +202,7 @@ class PID:
                                   0, #0.5/height_factor * battery_factor,
                                   1,
                                   i_range=(-400, 400), control_range=(1100, 1600),
-                                  d_range=(-40, 40), midpoint=1450)  # Изменено с 1300 на 1450
+                                  d_range=(-40, 40), midpoint=1450)  # Changed from 1300 to 1450
                  ):
 
         self.trim_controller_cap_plane = 0.05

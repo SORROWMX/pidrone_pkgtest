@@ -7,20 +7,20 @@ import math
 TARGET_HEIGHT = 0.75
 
 # PID parameters for height control - tuned for new throttle values
-KP = 60.0   # Оптимизировано для более быстрой реакции
-KI = 0.12   # Оптимизировано для лучшего удержания высоты
-KD = 40.0   # Оптимизировано для лучшего демпфирования
+KP = 60.0   # Optimized for faster response
+KI = 0.12   # Optimized for better height maintenance
+KD = 40.0   # Optimized for better damping
 
 # New parameters for improved height control
-MAX_VERTICAL_SPEED = 0.25  # м/с - максимальная скорость по вертикали
-HOVER_THROTTLE = 1450     # Значение дросселя для зависания (из реальных данных)
-THROTTLE_MIN = 1400       # Минимальное значение, при котором дрон начинает отрываться от земли
-THROTTLE_MAX = 1500       # Максимальное безопасное значение
+MAX_VERTICAL_SPEED = 0.25  # m/s - maximum vertical speed
+HOVER_THROTTLE = 1450     # Hover throttle value (from real data)
+THROTTLE_MIN = 1400       # Minimum throttle value that starts to lift the drone
+THROTTLE_MAX = 1500       # Maximum safe throttle value
 
 # Takeoff parameters
-TAKEOFF_ACCELERATION_LIMIT = 0.15  # м/с² - ограничение ускорения при взлете
-TAKEOFF_VELOCITY_LIMIT = 0.3       # м/с - максимальная скорость при взлете
-TAKEOFF_DECELERATION_START = 0.65  # % от целевой высоты - начало торможения
+TAKEOFF_ACCELERATION_LIMIT = 0.15  # m/s² - acceleration limit during takeoff
+TAKEOFF_VELOCITY_LIMIT = 0.3       # m/s - maximum velocity during takeoff
+TAKEOFF_DECELERATION_START = 0.65  # % of target height - start of deceleration
 
 #####################################################
 #						PID							#
@@ -56,9 +56,9 @@ class PIDaxis():
         self.takeoff_phase = True  # Start in takeoff mode
         self.takeoff_start_time = None
         self.max_height_reached = 0.0
-        self.prev_throttle = HOVER_THROTTLE  # Для плавного изменения дросселя
-        self.takeoff_stage = 0  # 0: начальный разгон, 1: подъем, 2: торможение
-        # Флаг для определения, находится ли дрон на земле
+        self.prev_throttle = HOVER_THROTTLE  # For smooth throttle changes
+        self.takeoff_stage = 0  # 0: initial acceleration, 1: ascent, 2: deceleration
+        # Flag to determine if drone is on the ground
         self.on_ground = True
         
     def reset(self):
@@ -171,23 +171,23 @@ class PIDaxis():
             # Apply low-pass filter to smooth velocity estimate
             self.vertical_velocity = 0.7 * instant_velocity + 0.3 * self.vertical_velocity
         
-        # Определение, находится ли дрон на земле
+        # Determine if drone is on the ground
         if current_height < 0.05 and self.vertical_velocity <= 0:
             self.on_ground = True
         else:
             self.on_ground = False
             
-        # Определение стадии взлета
+        # Determine takeoff stage
         if self.takeoff_phase:
             height_ratio = current_height / TARGET_HEIGHT
             if height_ratio < 0.3:
-                # Начальный разгон - плавное увеличение тяги
+                # Initial acceleration - smooth thrust increase
                 self.takeoff_stage = 0
             elif height_ratio < TAKEOFF_DECELERATION_START:
-                # Основной подъем - контролируемая скорость
+                # Main ascent - controlled speed
                 self.takeoff_stage = 1
             else:
-                # Торможение - подготовка к стабилизации
+                # Deceleration - preparation for stabilization
                 self.takeoff_stage = 2
         
         # Detect takeoff phase completion
@@ -217,36 +217,36 @@ class PIDaxis():
                          "Yes" if self.on_ground else "No")
         
         # Emergency handling with improved logic
-        if current_height > TARGET_HEIGHT * 1.4:  # Снижено с 1.75 до 1.4
+        if current_height > TARGET_HEIGHT * 1.4:  # Reduced from 1.75 to 1.4
             if self.debug:
                 rospy.logwarn("EMERGENCY BRAKING: too high!")
             return THROTTLE_MIN  # Minimum throttle to quickly descend
         
         # Prevent rapid descent if falling too fast
-        if self.vertical_velocity < -MAX_VERTICAL_SPEED * 1.1:  # Снижено с 1.5 до 1.1
+        if self.vertical_velocity < -MAX_VERTICAL_SPEED * 1.1:  # Reduced from 1.5 to 1.1
             if self.debug:
                 rospy.logwarn("EMERGENCY THROTTLE: falling too fast! %.2f m/s", self.vertical_velocity)
-            return HOVER_THROTTLE + 10  # Снижено с +30 до +10
+            return HOVER_THROTTLE + 10  # Reduced from +30 to +10
             
         # Calculate error
         error = TARGET_HEIGHT - current_height
         
         # Smooth error to reduce sudden changes (exponential smoothing)
-        smoothed_error = error * 0.6 + self.previous_height_error * 0.4  # Увеличиваем сглаживание
+        smoothed_error = error * 0.6 + self.previous_height_error * 0.4  # Increased smoothing
         
         # Update integral term with anti-windup mechanism
         # Only integrate when within reasonable range of target and not moving too fast
-        if abs(error) < 0.15 and abs(self.vertical_velocity) < MAX_VERTICAL_SPEED * 0.7:  # Сужен диапазон интегрирования
+        if abs(error) < 0.15 and abs(self.vertical_velocity) < MAX_VERTICAL_SPEED * 0.7:  # Narrowed integration range
             # Reduce integral gain during takeoff
             integral_gain = 0.15 if self.takeoff_phase else 0.3
             self.height_integral = self.height_integral + error * dt * integral_gain
             
             # Dynamic integral limits based on error magnitude
-            i_limit = 0.06 * (1.0 - min(1.0, abs(error) / 0.15))  # Уменьшен предел интегрирования
+            i_limit = 0.06 * (1.0 - min(1.0, abs(error) / 0.15))  # Reduced integral limit
             self.height_integral = max(-i_limit, min(self.height_integral, i_limit))
         else:
             # Outside normal operating range - quickly decay integral term
-            self.height_integral *= 0.85  # Быстрее сбрасываем интеграл
+            self.height_integral *= 0.85  # Faster integral reset
         
         # Calculate derivative with vertical velocity for better performance
         derivative = -self.vertical_velocity  # Negative because positive velocity means decreasing error
@@ -255,17 +255,17 @@ class PIDaxis():
         if self.takeoff_phase:
             # Use different gains based on takeoff stage
             if self.takeoff_stage == 0:
-                # Начальный разгон - мягкий P, почти нет I, высокий D для контроля ускорения
+                # Initial acceleration - soft P, almost no I, high D for acceleration control
                 takeoff_kp = KP * 0.5
                 takeoff_ki = KI * 0.1
                 takeoff_kd = KD * 1.5
             elif self.takeoff_stage == 1:
-                # Основной подъем - средний P, низкий I, высокий D
+                # Main ascent - medium P, low I, high D
                 takeoff_kp = KP * 0.6
                 takeoff_ki = KI * 0.3
                 takeoff_kd = KD * 1.3
             else:  # stage 2
-                # Торможение - низкий P, средний I, очень высокий D
+                # Deceleration - low P, medium I, very high D
                 takeoff_kp = KP * 0.5
                 takeoff_ki = KI * 0.4
                 takeoff_kd = KD * 1.6
@@ -289,20 +289,20 @@ class PIDaxis():
             height_diff = current_height - TARGET_HEIGHT
             
             # Adjust descent rate based on how high we are
-            if height_diff > 0.2:  # Снижено с 0.3 до 0.2
+            if height_diff > 0.2:  # Reduced from 0.3 to 0.2
                 # Significantly above target - stronger descent
-                base_throttle = HOVER_THROTTLE - 25  # Уменьшено с -40 до -25
-                gain = 0.5   # Уменьшено с 0.6 до 0.5
-            elif height_diff > 0.08:  # Снижено с 0.1 до 0.08
-                base_throttle = HOVER_THROTTLE - 15  # Уменьшено с -20 до -15
-                gain = 0.55  # Уменьшено с 0.67 до 0.55
+                base_throttle = HOVER_THROTTLE - 25  # Reduced from -40 to -25
+                gain = 0.5   # Reduced from 0.6 to 0.5
+            elif height_diff > 0.08:  # Reduced from 0.1 to 0.08
+                base_throttle = HOVER_THROTTLE - 15  # Reduced from -20 to -15
+                gain = 0.55  # Reduced from 0.67 to 0.55
             else: 
                 # Close to target - gentle descent
-                base_throttle = HOVER_THROTTLE - 7   # Уменьшено с -10 до -7
-                gain = 0.65  # Уменьшено с 0.76 до 0.65
+                base_throttle = HOVER_THROTTLE - 7   # Reduced from -10 to -7
+                gain = 0.65  # Reduced from 0.76 to 0.65
                 
             # Reduce descent rate if already descending quickly
-            if self.vertical_velocity < -0.12:  # Снижено с -0.2 до -0.12
+            if self.vertical_velocity < -0.12:  # Reduced from -0.2 to -0.12
                 gain *= (1.0 + 0.35 * min(1.0, -self.vertical_velocity / MAX_VERTICAL_SPEED))
                 
             throttle_adjustment = p_term + i_term + d_term
@@ -315,23 +315,23 @@ class PIDaxis():
             if self.takeoff_phase:
                 # During takeoff, use more conservative approach
                 if self.takeoff_stage == 0:
-                    # Начальный разгон - очень плавное увеличение тяги
+                    # Initial acceleration - very smooth thrust increase
                     if self.on_ground:
-                        # Если дрон на земле, нужно дать больше тяги для отрыва
+                        # If drone is on the ground, need more thrust for liftoff
                         base_throttle = HOVER_THROTTLE + 15
                         gain = 0.6
                     else:
                         base_throttle = HOVER_THROTTLE + 10
                         gain = 0.5
                     
-                    # Ограничение ускорения при взлете
+                    # Limit acceleration during takeoff
                     if self.vertical_velocity > TAKEOFF_VELOCITY_LIMIT * 0.5:
-                        # Если уже набрали половину целевой скорости, начинаем ограничивать ускорение
+                        # If already at half target speed, start limiting acceleration
                         base_throttle = HOVER_THROTTLE + 5
                         gain = 0.4
                         
                 elif self.takeoff_stage == 1:
-                    # Основной подъем - контролируемая скорость
+                    # Main ascent - controlled speed
                     if height_diff > 0.25:
                         base_throttle = HOVER_THROTTLE + 12
                         gain = 0.6
@@ -339,63 +339,63 @@ class PIDaxis():
                         base_throttle = HOVER_THROTTLE + 8
                         gain = 0.55
                         
-                    # Контроль скорости подъема
+                    # Control ascent speed
                     if self.vertical_velocity > TAKEOFF_VELOCITY_LIMIT:
-                        # Если превысили целевую скорость, снижаем тягу
+                        # If exceeded target speed, reduce thrust
                         velocity_excess = (self.vertical_velocity - TAKEOFF_VELOCITY_LIMIT) / TAKEOFF_VELOCITY_LIMIT
                         base_throttle -= int(velocity_excess * 12)
                         
-                else:  # stage 2 - торможение
-                    # Торможение перед достижением цели
-                    # Чем ближе к цели и выше скорость, тем сильнее тормозим
+                else:  # stage 2 - deceleration
+                    # Deceleration before reaching target
+                    # The closer to target and higher speed, the stronger the braking
                     height_ratio = current_height / TARGET_HEIGHT
                     
                     if height_ratio > 0.9:
-                        # Очень близко к цели - почти зависание
+                        # Very close to target - almost hovering
                         base_throttle = HOVER_THROTTLE - 2
                         gain = 0.5
                     elif height_ratio > 0.8:
-                        # Близко к цели - начинаем тормозить
+                        # Close to target - start braking
                         base_throttle = HOVER_THROTTLE + 2
                         gain = 0.55
                     else:
-                        # Приближаемся к цели - готовимся к торможению
+                        # Approaching target - prepare for braking
                         base_throttle = HOVER_THROTTLE + 5
                         gain = 0.6
                     
-                    # Прогрессивное торможение на основе скорости
+                    # Progressive braking based on speed
                     if self.vertical_velocity > 0.1:
-                        # Тормозим тем сильнее, чем выше скорость
+                        # Brake harder with higher speed
                         braking = min(1.0, self.vertical_velocity / TAKEOFF_VELOCITY_LIMIT) * min(1.0, height_ratio / 0.9)
-                        base_throttle -= int(braking * 15)  # До 15 единиц снижения тяги
+                        base_throttle -= int(braking * 15)  # Up to 15 units of thrust reduction
                 
-                # Общее ограничение скорости для всех стадий взлета
+                # Global speed limit for all takeoff stages
                 if self.vertical_velocity > TAKEOFF_VELOCITY_LIMIT * 1.2:
-                    # Экстренное торможение при превышении скорости
+                    # Emergency braking when speed exceeded
                     base_throttle = HOVER_THROTTLE - 8
                     gain = 0.4
             else:
                 # Normal operation (not takeoff)
                 # Adjust ascent rate based on how low we are
-                if height_diff > 0.2:  # Снижено с 0.3 до 0.2
+                if height_diff > 0.2:  # Reduced from 0.3 to 0.2
                     # Significantly below target - stronger response
-                    base_throttle = HOVER_THROTTLE + 15  # Снижено с +30 до +15
-                    gain = 0.8  # Снижено с 0.9 до 0.8
-                elif height_diff > 0.08:  # Снижено с 0.1 до 0.08
+                    base_throttle = HOVER_THROTTLE + 15  # Reduced from +30 to +15
+                    gain = 0.8  # Reduced from 0.9 to 0.8
+                elif height_diff > 0.08:  # Reduced from 0.1 to 0.08
                     # Moderately below target
-                    base_throttle = HOVER_THROTTLE + 10  # Снижено с +20 до +10
-                    gain = 0.7  # Снижено с 0.8 до 0.7
-                elif height_diff > 0.04:  # Снижено с 0.05 до 0.04
+                    base_throttle = HOVER_THROTTLE + 10  # Reduced from +20 to +10
+                    gain = 0.7  # Reduced from 0.8 to 0.7
+                elif height_diff > 0.04:  # Reduced from 0.05 to 0.04
                     # Slightly below target
-                    base_throttle = HOVER_THROTTLE + 5   # Снижено с +10 до +5
-                    gain = 0.6  # Снижено с 0.7 до 0.6
+                    base_throttle = HOVER_THROTTLE + 5   # Reduced from +10 to +5
+                    gain = 0.6  # Reduced from 0.7 to 0.6
                 else:
                     # Very close to target
                     base_throttle = HOVER_THROTTLE
-                    gain = 0.55  # Снижено с 0.65 до 0.55
+                    gain = 0.55  # Reduced from 0.65 to 0.55
                 
             # Reduce ascent rate if already ascending quickly
-            if self.vertical_velocity > 0.12:  # Снижено с 0.2 до 0.12
+            if self.vertical_velocity > 0.12:  # Reduced from 0.2 to 0.12
                 gain *= (1.0 - 0.3 * min(1.0, self.vertical_velocity / MAX_VERTICAL_SPEED))
                 
             throttle_adjustment = p_term + i_term + d_term
@@ -404,15 +404,15 @@ class PIDaxis():
         # Add feedforward term
         throttle += ff_term
         
-        # Ограничение скорости изменения дросселя для более плавного управления
-        max_throttle_change = 8  # Максимальное изменение за один шаг
+        # Limit throttle change rate for smoother control
+        max_throttle_change = 8  # Maximum change per step
         if self.takeoff_phase:
-            # Во время взлета еще более плавное изменение
+            # During takeoff, even smoother changes
             max_throttle_change = 4
             
         throttle_change = throttle - self.prev_throttle
         if abs(throttle_change) > max_throttle_change:
-            # Ограничиваем изменение
+            # Limit the change
             throttle = self.prev_throttle + max_throttle_change * (1 if throttle_change > 0 else -1)
         
         # Apply nonlinear mapping to throttle for better control at extremes
@@ -423,9 +423,9 @@ class PIDaxis():
         
         # Apply smooth nonlinear curve (sigmoid-like)
         if normalized_throttle < 0.5:
-            normalized_throttle = 0.5 * math.pow(normalized_throttle * 2, 1.05)  # Более плавная кривая
+            normalized_throttle = 0.5 * math.pow(normalized_throttle * 2, 1.05)  # Smoother curve
         else:
-            normalized_throttle = 0.5 + 0.5 * (1.0 - math.pow(2.0 - normalized_throttle * 2, 1.05))  # Более плавная кривая
+            normalized_throttle = 0.5 + 0.5 * (1.0 - math.pow(2.0 - normalized_throttle * 2, 1.05))  # Smoother curve
             
         # Convert back to throttle value
         throttle = int(THROTTLE_MIN + normalized_throttle * throttle_range)
@@ -462,7 +462,7 @@ class PID:
                                   0, #0.5/height_factor * battery_factor,
                                   1,
                                   i_range=(-400, 400), control_range=(1100, 1600),
-                                  d_range=(-40, 40), midpoint=1450)  # Изменено с 1300 на 1450
+                                  d_range=(-40, 40), midpoint=1450)  # Changed from 1300 to 1450
                  ):
 
         self.trim_controller_cap_plane = 0.05
