@@ -3,12 +3,17 @@
 import rospy
 
 # Target height to maintain in meters
-TARGET_HEIGHT = 0.5
+TARGET_HEIGHT = 0.75
 
 # PID parameters for height control - tuned for new throttle values
-KP = 80.0   # Reduced for smoother control
-KI = 0.15   # Reduced to prevent oscillation
-KD = 40.0   # Reduced for less aggressive response
+KP = 60.0   # Оптимизировано для более быстрой реакции
+KI = 0.12   # Оптимизировано для лучшего удержания высоты
+KD = 40.0   # Оптимизировано для лучшего демпфирования
+
+# Параметры для контроля дросселя
+HOVER_THROTTLE = 1450     # Значение дросселя для зависания
+THROTTLE_MIN = 1437       # Минимальное значение дросселя (из анализа)
+THROTTLE_MAX = 1469       # Максимальное значение дросселя (из анализа)
 
 #####################################################
 #						PID							#
@@ -110,19 +115,19 @@ class PIDaxis():
         print("Height: %.2fm, Target: %.2fm" % (current_height, TARGET_HEIGHT))
         
         # Emergency braking only when too high
-        if current_height > TARGET_HEIGHT * 1.75:
+        if current_height > TARGET_HEIGHT * 1.4:
             print("EMERGENCY BRAKING: too high!")
-            return 1400  # Minimum throttle to quickly descend
+            return THROTTLE_MIN  # Minimum throttle to quickly descend
             
         # Calculate error
         error = TARGET_HEIGHT - current_height
         
         # Smooth error to reduce sudden changes
-        smoothed_error = error * 0.8 + self.previous_height_error * 0.2
+        smoothed_error = error * 0.6 + self.previous_height_error * 0.4
         
         # Update integral term with time consideration
-        self.height_integral = self.height_integral + error * dt * 0.5
-        self.height_integral = max(-0.1, min(self.height_integral, 0.1))  # Limit integral
+        self.height_integral = self.height_integral + error * dt * 0.3
+        self.height_integral = max(-0.06, min(self.height_integral, 0.06))  # Limit integral
         
         # Calculate derivative with smoothed error
         derivative = (smoothed_error - self.previous_height_error) / dt
@@ -136,12 +141,12 @@ class PIDaxis():
             # Above target height
             height_diff = current_height - TARGET_HEIGHT
             
-            if height_diff > 0.1: 
-                base_throttle = 1430  # Set to 1410 for descent
-                gain = 0.67
+            if height_diff > 0.08: 
+                base_throttle = HOVER_THROTTLE - 8  # Уменьшаем дроссель для снижения
+                gain = 0.55
             else: 
-                base_throttle = 1430  # Set to 1410 for descent
-                gain = 0.76
+                base_throttle = HOVER_THROTTLE - 3  # Мягкое снижение при небольшом превышении
+                gain = 0.65
                 
             throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)
@@ -150,28 +155,28 @@ class PIDaxis():
             # Adaptive base throttle based on distance to target
             height_diff = TARGET_HEIGHT - current_height
             
-            if height_diff > 0.3:
+            if height_diff > 0.2:
                 # Significantly below target - stronger response
-                base_throttle = 1480  # Set to 1480 for takeoff
-                gain = 0.9
-            elif height_diff > 0.1:
-                # Moderately below target
-                base_throttle = 1480  # Set to 1480 for takeoff
+                base_throttle = HOVER_THROTTLE + 10  # Увеличиваем дроссель для подъема
                 gain = 0.8
-            elif height_diff > 0.05:
-                # Slightly below target
-                base_throttle = 1450  # Slightly lower
+            elif height_diff > 0.08:
+                # Moderately below target
+                base_throttle = HOVER_THROTTLE + 6
                 gain = 0.7
+            elif height_diff > 0.04:
+                # Slightly below target
+                base_throttle = HOVER_THROTTLE + 3
+                gain = 0.6
             else:
                 # Very close to target
-                base_throttle = 1430  # Between takeoff and descent values
-                gain = 0.66
+                base_throttle = HOVER_THROTTLE
+                gain = 0.55
                 
             throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)
         
         # Smoothly limit throttle range
-        throttle = max(1380, min(throttle, 1520))  # Narrower range
+        throttle = max(THROTTLE_MIN, min(throttle, THROTTLE_MAX))  # Используем значения из анализа
         
         # Store values for next iteration
         self.previous_height = current_height
@@ -199,7 +204,7 @@ class PID:
                                   0, #0.5/height_factor * battery_factor,
                                   1,
                                   i_range=(-400, 400), control_range=(1100, 1600),
-                                  d_range=(-40, 40), midpoint=1300)
+                                  d_range=(-40, 40), midpoint=1450)  # Изменено с 1300 на 1450
                  ):
 
         self.trim_controller_cap_plane = 0.05
