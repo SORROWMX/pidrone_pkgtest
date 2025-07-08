@@ -1,27 +1,461 @@
-/* Tooltip container */
+/* Main theme styles inspired by ngx-admin */
+:root {
+  --primary-color: #3366ff;
+  --success-color: #00d68f;
+  --info-color: #0095ff;
+  --warning-color: #ffaa00;
+  --danger-color: #ff3d71;
+  --background-dark: #151a30;
+  --card-background: #222b45;
+  --border-color: #323259;
+  --text-color: #edf1f7;
+  --text-secondary: #b7bdd1;
+  --header-background: #1b1f3b;
+  --sidebar-background: #222b45;
+  --chart-grid-color: rgba(255, 255, 255, 0.1);
+  --velocity-mode-color: #3366ff;
+  --position-mode-color: #00d68f;
+  --connect-color: #00d68f;
+  --disconnect-color: #ff3d71;
+  --host-label-bg: #1a1f3d;
+}
+
+body {
+  background-color: var(--background-dark);
+  color: var(--text-color);
+  font-family: 'Open Sans', Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.container-fluid {
+  padding: 0;
+}
+
+/* Navbar styles */
+.navbar {
+  background-color: var(--header-background) !important;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.navbar-brand {
+  color: var(--text-color) !important;
+  font-weight: 600;
+  font-size: 1.5rem;
+}
+
+.navbar-light .navbar-nav .nav-link {
+  color: var(--text-secondary);
+}
+
+/* Card styles */
+.card {
+  background-color: var(--card-background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  margin-bottom: 1.5rem;
+}
+
+.card-header {
+  background-color: rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid var(--border-color);
+  padding: 1rem;
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+/* Button styles */
+.btn-primary {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.btn-primary:hover {
+  background-color: #2a5cff;
+  border-color: #2a5cff;
+}
+
+.btn-success {
+  background-color: var(--success-color);
+  border-color: var(--success-color);
+}
+
+.btn-info {
+  background-color: var(--info-color);
+  border-color: var(--info-color);
+}
+
+.btn-warning {
+  background-color: var(--warning-color);
+  border-color: var(--warning-color);
+}
+
+.btn-danger {
+  background-color: var(--danger-color);
+  border-color: var(--danger-color);
+}
+
+/* Mode toggle buttons */
+.btn-velocity {
+  background-color: var(--velocity-mode-color);
+  border-color: var(--velocity-mode-color);
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.btn-velocity:hover, .btn-velocity.active {
+  background-color: #2a5cff;
+  border-color: #2a5cff;
+  box-shadow: 0 0 0 0.2rem rgba(51, 102, 255, 0.25);
+}
+
+.btn-position {
+  background-color: var(--position-mode-color);
+  border-color: var(--position-mode-color);
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.btn-position:hover, .btn-position.active {
+  background-color: #00b377;
+  border-color: #00b377;
+  box-shadow: 0 0 0 0.2rem rgba(0, 214, 143, 0.25);
+}
+
+/* Alert styles */
+.alert {
+  border-radius: 0.5rem;
+}
+
+.alert-danger {
+  background-color: rgba(255, 61, 113, 0.2);
+  border-color: var(--danger-color);
+  color: #ff708d;
+}
+
+/* Form styles */
+.form-control {
+  background-color: var(--card-background);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  transition: all 0.3s ease;
+  border-radius: 0.25rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.form-control:focus {
+  background-color: var(--card-background);
+  border-color: var(--primary-color);
+  color: var(--text-color);
+  box-shadow: 0 0 0 0.2rem rgba(51, 102, 255, 0.25);
+}
+
+/* Styled number inputs */
+input[type="number"] {
+  background-color: rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  font-weight: 500;
+}
+
+input[type="number"]:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 0.2rem rgba(51, 102, 255, 0.25);
+}
+
+/* Control inputs styling */
+.control-input {
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+.control-input label {
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.control-input.velocity input {
+  border-left: 4px solid var(--velocity-mode-color);
+}
+
+.control-input.position input {
+  border-left: 4px solid var(--position-mode-color);
+}
+
+/* Chart containers */
+#heightchart, #velocitychart, #xychart {
+  background-color: var(--card-background);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+canvas {
+  border-radius: 0.25rem;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Table styles */
+.table {
+  color: var(--text-color);
+}
+
+.table-bordered {
+  border: 1px solid var(--border-color);
+}
+
+.table-bordered td, .table-bordered th {
+  border: 1px solid var(--border-color);
+}
+
+.table th {
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+/* Custom dashboard panels */
+.dashboard-panel {
+  background-color: var(--card-background);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  border: 1px solid var(--border-color);
+}
+
+.dashboard-panel h4 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.dashboard-stat {
+  font-size: 2rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.dashboard-stat-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* Chart specific styles */
+.chart-container {
+  position: relative;
+  height: 300px;
+  margin-bottom: 1rem;
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+}
+
+/* Tooltip container - keeping from original */
 .tooltip {
-    position: relative;
-    display: inline-block;
-    border-bottom: 1px black; /* If you want dots under the hoverable text */
+  position: relative;
+  display: inline-block;
+  border-bottom: 1px dotted var(--text-secondary);
 }
 
 /* Tooltip text */
 .tooltip .tooltiptext {
-    visibility: hidden;
-    width: 400px;
-    background-color: black;
-    color: #fff;
-    text-align: left;
-    padding: 5px 0;
-    border-radius: 6px;
- 
-    /* Position the tooltip text - see examples below! */
-    position: absolute;
-    z-index: 1;
+  visibility: hidden;
+  width: 400px;
+  background-color: var(--card-background);
+  color: var(--text-color);
+  text-align: left;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  
+  /* Position the tooltip text */
+  position: absolute;
+  z-index: 1;
+  bottom: 125%;
+  left: 50%;
+  margin-left: -200px;
+  
+  /* Fade in tooltip */
+  opacity: 0;
+  transition: opacity 0.3s;
 }
 
-/* Show the tooltip text when you mouse over the tooltip container */
+/* Show the tooltip text when hovering */
 .tooltip:hover .tooltiptext {
-    transition-delay: 1s;
-    visibility: visible;
+  visibility: visible;
+  opacity: 1;
+}
+
+/* Compact header for better mobile view */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 0.5rem;
+  }
+  
+  .dashboard-panel {
+    padding: 1rem;
+  }
+  
+  .host-input-group {
+    min-width: 100%;
+    margin-top: 15px;
+  }
+  
+  .navbar-nav .nav-item {
+    margin-bottom: 10px;
+  }
+  
+  .navbar-collapse {
+    padding: 10px;
+  }
+  
+  .alert {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+}
+
+/* Fix for chart legends */
+.chartjs-legend {
+  margin-top: 1rem !important;
+}
+
+.chartjs-legend li {
+  margin-right: 1rem !important;
+}
+
+/* Improved button styles */
+.btn {
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+.btn-sm {
+  padding: 0.25rem 0.75rem;
+}
+
+/* Status indicators */
+.status-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+
+.status-connected {
+  background-color: var(--success-color);
+}
+
+.status-disconnected {
+  background-color: var(--danger-color);
+}
+
+/* Mode indicators */
+.mode-indicator {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.mode-velocity {
+  background-color: var(--velocity-mode-color);
+}
+
+.mode-position {
+  background-color: var(--position-mode-color);
+}
+
+/* Alert with mode indicators */
+.alert-velocity {
+  background-color: rgba(51, 102, 255, 0.15);
+  border-color: var(--velocity-mode-color);
+  color: #b3c9ff;
+}
+
+.alert-position {
+  background-color: rgba(0, 214, 143, 0.15);
+  border-color: var(--position-mode-color);
+  color: #7aedc4;
+}
+
+/* Host input styling */
+.host-input-group {
+  min-width: 400px;
+  margin-top: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.host-label {
+  background-color: var(--host-label-bg) !important;
+  color: var(--text-color);
+  border-color: var(--border-color);
+  font-weight: 500;
+  padding-left: 15px;
+  padding-right: 15px;
+}
+
+.host-input {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-color: var(--border-color);
+  color: var(--text-color);
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.host-input:focus {
+  background-color: rgba(0, 0, 0, 0.3);
+  box-shadow: none;
+  border-color: var(--primary-color);
+}
+
+.host-input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.btn-connect {
+  background-color: var(--connect-color);
+  border-color: var(--connect-color);
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.btn-connect:hover {
+  background-color: #00b377;
+  border-color: #00b377;
+  box-shadow: 0 0 0 0.2rem rgba(0, 214, 143, 0.25);
+}
+
+.btn-disconnect {
+  background-color: var(--disconnect-color);
+  border-color: var(--disconnect-color);
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.btn-disconnect:hover {
+  background-color: #e0365e;
+  border-color: #e0365e;
+  box-shadow: 0 0 0 0.2rem rgba(255, 61, 113, 0.25);
+}
+
+@media (max-width: 768px) {
+  .host-input-group {
+    min-width: 100%;
+  }
 }

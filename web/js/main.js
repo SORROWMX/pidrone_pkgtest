@@ -70,21 +70,21 @@ function connect() {
     ros.on('error', function(error) {
       console.log('ROS Master:  Error, check console.');
       //printProperties(error);
-      document.getElementById('statusMessage').innerHTML='Error detected; check console.';
+      document.getElementById('statusMessage').innerHTML='<span class="status-indicator status-disconnected mr-2"></span>Ошибка подключения';
       $('#statusMessage').addClass('alert-danger').removeClass('alert-success');
     });
 
     ros.on('connection', function() {
       console.log('ROS Master:  Connected.');
       //printProperties(error);
-      document.getElementById('statusMessage').innerHTML="Connected";
+      document.getElementById('statusMessage').innerHTML='<span class="status-indicator status-connected mr-2"></span>Подключено';
       $('#statusMessage').addClass('alert-success').removeClass('alert-danger');
     });
 
     ros.on('close', function() {
       console.log('ROS Master:  Connection closed.');
       //printProperties(error);
-      document.getElementById('statusMessage').innerHTML="Disconnected";
+      document.getElementById('statusMessage').innerHTML='<span class="status-indicator status-disconnected mr-2"></span>Отключено';
       $('#statusMessage').addClass('alert-danger').removeClass('alert-success');
     });
 
@@ -811,14 +811,38 @@ function publishResetTransform() {
 
 function publishToPosition() {
   console.log("to position");
+  
+  if (!ros || !ros.isConnected) {
+    console.log("ROS не подключен. Сначала подключитесь к ROS.");
+    return;
+  }
+  
+  if (typeof positionMsg === 'undefined') {
+    console.log("positionMsg не инициализирован. Сначала подключитесь к ROS.");
+    return;
+  }
+  
   positionMsg.data = true;
   positionPub.publish(positionMsg);
+  updateControlModeUI(true);
 }
 
 function publishToVelocity() {
   console.log("to velocity");
+  
+  if (!ros || !ros.isConnected) {
+    console.log("ROS не подключен. Сначала подключитесь к ROS.");
+    return;
+  }
+  
+  if (typeof positionMsg === 'undefined') {
+    console.log("positionMsg не инициализирован. Сначала подключитесь к ROS.");
+    return;
+  }
+  
   positionMsg.data = false;
   positionPub.publish(positionMsg);
+  updateControlModeUI(false);
 }
 
 function publishToggleMap() {
@@ -981,11 +1005,22 @@ function publishYawRight() {
 
 function publishZeroVelocity() {
   console.log("zero velocity");
-    twistMsg.linear.x = 0
-    twistMsg.linear.y = 0
-    twistMsg.linear.z = 0
-    twistMsg.angular.z = 0
-    velocityControlPub.publish(twistMsg)
+  
+  if (!ros || !ros.isConnected) {
+    console.log("ROS не подключен. Сначала подключитесь к ROS.");
+    return;
+  }
+  
+  if (typeof twistMsg === 'undefined' || typeof velocityControlPub === 'undefined') {
+    console.log("twistMsg или velocityControlPub не инициализированы. Сначала подключитесь к ROS.");
+    return;
+  }
+  
+  twistMsg.linear.x = 0
+  twistMsg.linear.y = 0
+  twistMsg.linear.z = 0
+  twistMsg.angular.z = 0
+  velocityControlPub.publish(twistMsg)
 }
 
 /*
@@ -994,39 +1029,39 @@ function publishZeroVelocity() {
 
 
 var rawIrDataset = {
-  label: 'Raw IR Readings',
+  label: 'Сырые данные IR',
   data: Array(0), // initialize array of length 0
-  borderWidth: 1.5,
+  borderWidth: 2,
   pointRadius: 0,
   fill: false,
-  borderColor: 'rgba(255, 80, 0, 0.8)',
-  backgroundColor: 'rgba(255, 80, 0, 0)',
+  borderColor: 'rgba(255, 99, 132, 1)',
+  backgroundColor: 'rgba(255, 99, 132, 0.1)',
   lineTension: 0, // remove smoothing
   itemID: 0
 };
 var rawIrData = Array(0);
 
 var rawVelocityDataset = {
-  label: 'Raw Velocity Readings',
+  label: 'Данные скорости',
   data: Array(0), // initialize array of length 0
-  borderWidth: 1.5,
+  borderWidth: 2,
   pointRadius: 0,
   fill: false,
-  borderColor: 'rgba(255, 80, 0, 0.8)',
-    backgroundColor: 'rgba(255, 80, 0, 0)',
+  borderColor: 'rgba(255, 99, 132, 1)',
+  backgroundColor: 'rgba(255, 99, 132, 0.1)',
   lineTension: 0, // remove smoothing
   itemID: 0
 };
 var rawVelocityData = Array(0);
 
 var ukfDataset = {
-  label: 'UKF Filtered Height',
+  label: 'UKF Высота',
   data: Array(0), // initialize array of length 0
-  borderWidth: 1.5,
+  borderWidth: 2,
   pointRadius: 0,
   fill: false,
-  borderColor: 'rgba(49, 26, 140, 0.8)',
-  backgroundColor: 'rgba(49, 26, 140, 0.1)',
+  borderColor: 'rgba(54, 162, 235, 1)',
+  backgroundColor: 'rgba(54, 162, 235, 0.1)',
   lineTension: 0, // remove smoothing
   itemID: 1
 }
@@ -1038,8 +1073,8 @@ var ukfPlusSigmaDataset = {
   borderWidth: 0,
   pointRadius: 0,
   fill: '+1', // fill to the next dataset
-  borderColor: 'rgba(49, 26, 140, 0)', // full transparency
-  backgroundColor: 'rgba(49, 26, 140, 0.1)',
+  borderColor: 'rgba(54, 162, 235, 0)', // full transparency
+  backgroundColor: 'rgba(54, 162, 235, 0.2)',
   lineTension: 0, // remove smoothing
   itemID: 2
 }
@@ -1051,34 +1086,34 @@ var ukfMinusSigmaDataset = {
   borderWidth: 0,
   pointRadius: 0,
   fill: false,
-  borderColor: 'rgba(49, 26, 140, 0)', // full transparency
-  //backgroundColor: 'rgba(49, 26, 140, 0.1)'
+  borderColor: 'rgba(54, 162, 235, 0)', // full transparency
+  //backgroundColor: 'rgba(54, 162, 235, 0.1)'
   lineTension: 0, // remove smoothing
   itemID: 3
 }
 var ukfMinusSigmaData = Array(0);
 
 var emaDataset = {
-  label: 'EMA-Smoothed Altitude',
+  label: 'EMA-Сглаженная высота',
   data: Array(0), // initialize array of length 0
-  borderWidth: 1.5,
+  borderWidth: 2,
   pointRadius: 0,
   fill: false,
-  borderColor: 'rgba(252, 70, 173, 0.8)',
-  backgroundColor: 'rgba(252, 70, 173, 0)',
+  borderColor: 'rgba(255, 206, 86, 1)',
+  backgroundColor: 'rgba(255, 206, 86, 0.1)',
   lineTension: 0, // remove smoothing
   itemID: 4
 }
 var emaData = Array(0);
 
 var stateGroundTruthDataset = {
-  label: 'Ground Truth Height',
+  label: 'Истинная высота',
   data: Array(0), // initialize array of length 0
-  borderWidth: 1.5,
+  borderWidth: 2,
   pointRadius: 0,
   fill: false,
-  borderColor: 'rgba(0, 0, 0, 0.8)',
-  backgroundColor: 'rgba(0, 0, 0, 0)',
+  borderColor: 'rgba(75, 192, 192, 1)',
+  backgroundColor: 'rgba(75, 192, 192, 0.1)',
   lineTension: 0, // remove smoothing
   itemID: 5
 }
@@ -1087,13 +1122,13 @@ var stateGroundTruthData = Array(0);
 //--------------------------------------
 
 var residualDataset = {
-  label: 'Error between UKF and Ground Truth',
+  label: 'Ошибка между UKF и реальностью',
   data: Array(0), // initialize array of length 0
-  borderWidth: 1.5,
+  borderWidth: 2,
   pointRadius: 0,
   fill: false,
-  borderColor: 'rgba(209, 81, 58, 0.8)',
-  backgroundColor: 'rgba(209, 81, 58, 0)',
+  borderColor: 'rgba(255, 99, 132, 1)',
+  backgroundColor: 'rgba(255, 99, 132, 0.1)',
   lineTension: 0, // remove smoothing
 }
 var residualData = Array(0);
@@ -1101,11 +1136,11 @@ var residualData = Array(0);
 var plusSigmaDataset = {
   label: '+1 sigma',
   data: Array(0), // initialize array of length 0
-  borderWidth: 1.5,
+  borderWidth: 2,
   pointRadius: 0,
   fill: '+1', // fill to the next dataset
-  borderColor: 'rgba(49, 26, 140, 0.8)',
-  backgroundColor: 'rgba(49, 26, 140, 0.1)',
+  borderColor: 'rgba(54, 162, 235, 1)',
+  backgroundColor: 'rgba(54, 162, 235, 0.2)',
   lineTension: 0, // remove smoothing
 }
 var plusSigmaData = Array(0);
@@ -1113,11 +1148,11 @@ var plusSigmaData = Array(0);
 var minusSigmaDataset = {
   label: '-1 sigma',
   data: Array(0), // initialize array of length 0
-  borderWidth: 1.5,
+  borderWidth: 2,
   pointRadius: 0,
   fill: false,
-  borderColor: 'rgba(49, 26, 140, 0.8)',
-  backgroundColor: 'rgba(49, 26, 140, 0.1)',
+  borderColor: 'rgba(54, 162, 235, 1)',
+  backgroundColor: 'rgba(54, 162, 235, 0.2)',
   lineTension: 0, // remove smoothing
 }
 var minusSigmaData = Array(0);
@@ -1141,9 +1176,18 @@ function loadHeightChartStandardView() {
             ]
         },
         options: {
-	    responsive: false,
+            responsive: true,
+            maintainAspectRatio: false,
             animation: {
                duration: 0,
+            },
+            layout: {
+                padding: {
+                    left: 10,
+                    right: 25,
+                    top: 25,
+                    bottom: 10
+                }
             },
             scales: {
                 yAxes: [{
@@ -1151,11 +1195,21 @@ function loadHeightChartStandardView() {
                         beginAtZero: true,
                         min: 0,
                         max: 3,
-                        stepSize: 0.2
+                        stepSize: 0.2,
+                        fontColor: '#edf1f7',
+                        padding: 10
                     },
                     scaleLabel: {
                         display: true,
-                        labelString: 'Height (meters)'
+                        labelString: 'Высота (метры)',
+                        fontColor: '#edf1f7',
+                        fontSize: 14,
+                        padding: 10
+                    },
+                    gridLines: {
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        zeroLineColor: 'rgba(255, 255, 255, 0.25)',
+                        drawBorder: true
                     }
                 }],
                 xAxes: [{
@@ -1164,23 +1218,38 @@ function loadHeightChartStandardView() {
                     ticks: {
                         min: 0,
                         max: windowSize,
-                        stepSize: windowSize
+                        stepSize: windowSize,
+                        fontColor: '#edf1f7'
+                    },
+                    gridLines: {
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        zeroLineColor: 'rgba(255, 255, 255, 0.25)'
                     }
                 }]
             },
             legend: {
-              display: true,
-              labels: {
-                  // Filter out UKF standard deviation datasets and datasets
-                  // that have no data in them
-                  filter: function(itemInLegend, chartData) {
-                      var itemIndex = itemInLegend.datasetIndex;
-                      return ((itemIndex != ukfPlusSigmaDataset.itemID &&
-                               itemIndex != ukfMinusSigmaDataset.itemID) &&
-                               (chartData.datasets[itemIndex].data.length != 0));
-                  }
-              }
+                display: true,
+                position: 'top',
+                labels: {
+                    fontColor: '#edf1f7',
+                    boxWidth: 15,
+                    padding: 15,
+                    // Filter out UKF standard deviation datasets and datasets
+                    // that have no data in them
+                    filter: function(itemInLegend, chartData) {
+                        var itemIndex = itemInLegend.datasetIndex;
+                        return ((itemIndex != ukfPlusSigmaDataset.itemID &&
+                                 itemIndex != ukfMinusSigmaDataset.itemID) &&
+                                 (chartData.datasets[itemIndex].data.length != 0));
+                    }
+                }
             },
+            tooltips: {
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                titleFontColor: '#fff',
+                bodyFontColor: '#fff',
+                displayColors: false
+            }
         }
     });
 }
@@ -1197,14 +1266,36 @@ function loadHeightChartUkfAnalysis() {
             ]
         },
         options: {
+            responsive: true,
+            maintainAspectRatio: false,
             animation: {
                duration: 0,
+            },
+            layout: {
+                padding: {
+                    left: 10,
+                    right: 25,
+                    top: 25,
+                    bottom: 10
+                }
             },
             scales: {
                 yAxes: [{
                     scaleLabel: {
                         display: true,
-                        labelString: 'Height (meters)'
+                        labelString: 'Высота (метры)',
+                        fontColor: '#edf1f7',
+                        fontSize: 14,
+                        padding: 10
+                    },
+                    ticks: {
+                        fontColor: '#edf1f7',
+                        padding: 10
+                    },
+                    gridLines: {
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        zeroLineColor: 'rgba(255, 255, 255, 0.25)',
+                        drawBorder: true
                     }
                 }],
                 xAxes: [{
@@ -1213,13 +1304,30 @@ function loadHeightChartUkfAnalysis() {
                     ticks: {
                         min: 0,
                         max: windowSize,
-                        stepSize: windowSize
+                        stepSize: windowSize,
+                        fontColor: '#edf1f7'
+                    },
+                    gridLines: {
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        zeroLineColor: 'rgba(255, 255, 255, 0.25)'
                     }
                 }]
             },
             legend: {
-              display: true
+                display: true,
+                position: 'top',
+                labels: {
+                    fontColor: '#edf1f7',
+                    boxWidth: 15,
+                    padding: 15
+                }
             },
+            tooltips: {
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                titleFontColor: '#fff',
+                bodyFontColor: '#fff',
+                displayColors: false
+            }
         }
     });
 }
@@ -1234,9 +1342,18 @@ function loadVelocityChartStandardView() {
             ]
         },
         options: {
-	    responsive: false,
+            responsive: true,
+            maintainAspectRatio: false,
             animation: {
                duration: 0,
+            },
+            layout: {
+                padding: {
+                    left: 10,
+                    right: 25,
+                    top: 25,
+                    bottom: 10
+                }
             },
             scales: {
                 yAxes: [{
@@ -1244,11 +1361,21 @@ function loadVelocityChartStandardView() {
                         beginAtZero: true,
                         min: 0,
                         max: 3,
-                        stepSize: 0.2
+                        stepSize: 0.2,
+                        fontColor: '#edf1f7',
+                        padding: 10
                     },
                     scaleLabel: {
                         display: true,
-                        labelString: 'Speed (m/s)'
+                        labelString: 'Скорость (м/с)',
+                        fontColor: '#edf1f7',
+                        fontSize: 14,
+                        padding: 10
+                    },
+                    gridLines: {
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        zeroLineColor: 'rgba(255, 255, 255, 0.25)',
+                        drawBorder: true
                     }
                 }],
                 xAxes: [{
@@ -1257,23 +1384,38 @@ function loadVelocityChartStandardView() {
                     ticks: {
                         min: 0,
                         max: windowSize,
-                        stepSize: windowSize
+                        stepSize: windowSize,
+                        fontColor: '#edf1f7'
+                    },
+                    gridLines: {
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        zeroLineColor: 'rgba(255, 255, 255, 0.25)'
                     }
                 }]
             },
             legend: {
-              display: true,
-              labels: {
-                  // Filter out UKF standard deviation datasets and datasets
-                  // that have no data in them
-                  filter: function(itemInLegend, chartData) {
-                      var itemIndex = itemInLegend.datasetIndex;
-                      return ((itemIndex != ukfPlusSigmaDataset.itemID &&
-                               itemIndex != ukfMinusSigmaDataset.itemID) &&
-                               (chartData.datasets[itemIndex].data.length != 0));
-                  }
-              }
+                display: true,
+                position: 'top',
+                labels: {
+                    fontColor: '#edf1f7',
+                    boxWidth: 15,
+                    padding: 15,
+                    // Filter out UKF standard deviation datasets and datasets
+                    // that have no data in them
+                    filter: function(itemInLegend, chartData) {
+                        var itemIndex = itemInLegend.datasetIndex;
+                        return ((itemIndex != ukfPlusSigmaDataset.itemID &&
+                                 itemIndex != ukfMinusSigmaDataset.itemID) &&
+                                 (chartData.datasets[itemIndex].data.length != 0));
+                    }
+                }
             },
+            tooltips: {
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                titleFontColor: '#fff',
+                bodyFontColor: '#fff',
+                displayColors: false
+            }
         }
     });
 }
@@ -1289,102 +1431,121 @@ $(document).ready(function() {
             datasets: [
                 {
                   data: Array(0), // initialize array of length 0
-                  borderWidth: 1.5,
+                  borderWidth: 2,
                   pointRadius: 0,
                   fill: false,
-                  borderColor: 'rgba(0, 0, 0, 1)',
-                  backgroundColor: 'rgba(0, 0, 0, 0)',
+                  borderColor: 'rgba(153, 102, 255, 1)',
+                  backgroundColor: 'rgba(153, 102, 255, 0.1)',
                   lineTension: 0, // remove smoothing
               },
               {
                 data: Array(0), // initialize array of length 0
-                borderWidth: 1.5,
+                borderWidth: 2,
                 pointRadius: 0,
                 fill: false,
-                borderColor: 'rgba(0, 0, 0, 1)',
-                backgroundColor: 'rgba(0, 0, 0, 0)',
+                borderColor: 'rgba(153, 102, 255, 1)',
+                backgroundColor: 'rgba(153, 102, 255, 0.1)',
                 lineTension: 0, // remove smoothing
               },
               {
                 data: Array(0), // initialize array of length 0
-                borderWidth: 1.5,
+                borderWidth: 2,
                 pointRadius: 0,
                 fill: false,
-                borderColor: 'rgba(0, 0, 0, 1)',
-                backgroundColor: 'rgba(0, 0, 0, 0)',
+                borderColor: 'rgba(153, 102, 255, 1)',
+                backgroundColor: 'rgba(153, 102, 255, 0.1)',
                 lineTension: 0, // remove smoothing
               },
               {
                 data: Array(0), // initialize array of length 0
-                borderWidth: 1.5,
+                borderWidth: 2,
                 pointRadius: 0,
                 fill: false,
-                borderColor: 'rgba(49, 26, 140, 1)',
-                backgroundColor: 'rgba(0, 0, 0, 0)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                backgroundColor: 'rgba(54, 162, 235, 0.1)',
                 lineTension: 0, // remove smoothing
               },
               {
                 data: Array(0), // initialize array of length 0
-                borderWidth: 1.5,
+                borderWidth: 2,
                 pointRadius: 0,
                 fill: false,
-                borderColor: 'rgba(49, 26, 140, 1)',
-                backgroundColor: 'rgba(0, 0, 0, 0)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                backgroundColor: 'rgba(54, 162, 235, 0.1)',
                 lineTension: 0, // remove smoothing
               },
               {
                 data: Array(0), // initialize array of length 0
-                borderWidth: 1.5,
+                borderWidth: 2,
                 pointRadius: 0,
                 fill: false,
-                borderColor: 'rgba(49, 26, 140, 1)',
-                backgroundColor: 'rgba(0, 0, 0, 0)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                backgroundColor: 'rgba(54, 162, 235, 0.1)',
                 lineTension: 0, // remove smoothing
               },
               {
                 data: Array(0), // initialize array of length 0
-                borderWidth: 1.5,
+                borderWidth: 2,
                 pointRadius: 0,
                 fill: false,
-                borderColor: 'rgba(255, 80, 0, 1)',
-                backgroundColor: 'rgba(0, 0, 0, 0)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                backgroundColor: 'rgba(255, 99, 132, 0.1)',
                 lineTension: 0, // remove smoothing
               },
               {
                 data: Array(0), // initialize array of length 0
-                borderWidth: 1.5,
+                borderWidth: 2,
                 pointRadius: 0,
                 fill: false,
-                borderColor: 'rgba(255, 80, 0, 1)',
-                backgroundColor: 'rgba(0, 0, 0, 0)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                backgroundColor: 'rgba(255, 99, 132, 0.1)',
                 lineTension: 0, // remove smoothing
               },
               {
                 data: Array(0), // initialize array of length 0
-                borderWidth: 1.5,
+                borderWidth: 2,
                 pointRadius: 0,
                 fill: false,
-                borderColor: 'rgba(255, 80, 0, 1)',
-                backgroundColor: 'rgba(0, 0, 0, 0)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                backgroundColor: 'rgba(255, 99, 132, 0.1)',
                 lineTension: 0, // remove smoothing
               },
             ]
         },
         options: {
-	    responsive: false,
+            responsive: true,
+            maintainAspectRatio: false,
             animation: {
                duration: 0,
+            },
+            layout: {
+                padding: {
+                    left: 10,
+                    right: 25,
+                    top: 25,
+                    bottom: 10
+                }
             },
             scales: {
                 yAxes: [{
                     ticks: {
                         min: -1,
                         max: 1,
-                        stepSize: 0.1
+                        stepSize: 0.2, // Увеличиваем stepSize с 0.1 до 0.2
+                        fontColor: '#edf1f7',
+                        padding: 10
                     },
                     scaleLabel: {
                         display: true,
-                        labelString: 'y position (meters)'
+                        labelString: 'Позиция y (метры)',
+                        fontColor: '#edf1f7',
+                        fontSize: 14,
+                        padding: 10
+                    },
+                    gridLines: {
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        zeroLineColor: 'rgba(255, 255, 255, 0.25)',
+                        drawBorder: true
                     }
                 }],
                 xAxes: [{
@@ -1393,22 +1554,48 @@ $(document).ready(function() {
                         min: -400.0/250.0,
                         // max: 1,
                         max: 400.0/250.0,
-                        stepSize: 0.1,
-                        display: true
+                        stepSize: 0.2, // Увеличиваем stepSize с 0.1 до 0.2
+                        display: true,
+                        fontColor: '#edf1f7',
+                        padding: 10
                     },
                     scaleLabel: {
                         display: true,
-                        labelString: 'x position (meters)'
+                        labelString: 'Позиция x (метры)',
+                        fontColor: '#edf1f7',
+                        fontSize: 14,
+                        padding: 10
+                    },
+                    gridLines: {
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        zeroLineColor: 'rgba(255, 255, 255, 0.25)'
                     }
                 }]
             },
             legend: {
-              display: false
+                display: false
             },
+            tooltips: {
+                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                titleFontColor: '#fff',
+                bodyFontColor: '#fff',
+                displayColors: false
+            }
         }
     });
 
     init();
+    
+    // Добавляем обработчики для кнопок переключения режима
+    $('#velocityBtn').on('click', function() {
+        publishVelocityMode();
+        updateControlModeUI(false);
+    });
+    
+    $('#positionBtn').on('click', function() {
+        publishPositionMode();
+        updateControlModeUI(true);
+    });
 });
 
 $(window).on("beforeunload", function(e) {
@@ -1428,44 +1615,127 @@ function changeHeightChartYScaleMax() {
 function togglePauseHeightChart(btn) {
     heightChartPaused = !heightChartPaused;
     if (heightChartPaused) {
-        btn.value = 'Play'
+        $(btn).html('<i class="fas fa-play"></i> Воспроизвести');
         irAlphaVal = 0;
     } else {
-        btn.value = 'Pause'
-        heightChart.data.datasets[0].backgroundColor = 'rgba(255, 80, 0, 0)';
+        $(btn).html('<i class="fas fa-pause"></i> Пауза');
+        heightChart.data.datasets[0].backgroundColor = 'rgba(255, 99, 132, 0)';
         heightChart.data.datasets[0].fill = false;
+    }
+}
+
+function togglePauseVelocityChart(btn) {
+    velocityChartPaused = !velocityChartPaused;
+    if (velocityChartPaused) {
+        $(btn).html('<i class="fas fa-play"></i> Воспроизвести');
+    } else {
+        $(btn).html('<i class="fas fa-pause"></i> Пауза');
     }
 }
 
 function toggleUkfAnalysis(btn) {
     showingUkfAnalysis = !showingUkfAnalysis;
     if (showingUkfAnalysis) {
-        btn.value = 'Standard View'
+        $(btn).html('<i class="fas fa-chart-line"></i> Стандартный вид');
         heightChart.destroy();
         loadHeightChartUkfAnalysis();
     } else {
-        btn.value = 'UKF Analysis'
+        $(btn).html('<i class="fas fa-chart-bar"></i> UKF Анализ');
         heightChart.destroy();
         loadHeightChartStandardView();
     }
 }
 
+function toggleVelUkfAnalysis(btn) {
+    // TODO: Implement UKF analysis for velocity
+    console.log('UKF Analysis button pressed for velocity');
+    if ($(btn).html().indexOf('UKF Анализ') !== -1) {
+        $(btn).html('<i class="fas fa-chart-line"></i> Стандартный вид');
+    } else {
+        $(btn).html('<i class="fas fa-chart-bar"></i> UKF Анализ');
+    }
+}
+
 function togglePauseXYChart(btn) {
-    // TODO: Implement this function
-    console.log('Pause button pressed')
+    // Implement XY chart pausing
+    console.log('Pause button pressed');
+    if ($(btn).html().indexOf('Пауза') !== -1) {
+        $(btn).html('<i class="fas fa-play"></i> Воспроизвести');
+    } else {
+        $(btn).html('<i class="fas fa-pause"></i> Пауза');
+    }
 }
 
 function publishVelocityMode() {
+    if (!ros || !ros.isConnected) {
+        console.log("ROS не подключен. Сначала подключитесь к ROS.");
+        return;
+    }
+    
+    if (typeof positionMsg === 'undefined') {
+        console.log("positionMsg не инициализирован. Сначала подключитесь к ROS.");
+        return;
+    }
+    
     positionMsg.data = false;
-    positionPub.publish(positionMsg)
+    positionPub.publish(positionMsg);
+    updateControlModeUI(false);
 }
 
 function publishPositionMode() {
+    if (!ros || !ros.isConnected) {
+        console.log("ROS не подключен. Сначала подключитесь к ROS.");
+        return;
+    }
+    
+    if (typeof positionMsg === 'undefined') {
+        console.log("positionMsg не инициализирован. Сначала подключитесь к ROS.");
+        return;
+    }
+    
     positionMsg.data = true;
-    positionPub.publish(positionMsg)
+    positionPub.publish(positionMsg);
+    updateControlModeUI(true);
+}
+
+// Функция для обновления UI при переключении режима
+function updateControlModeUI(isPositionMode) {
+    if (isPositionMode) {
+        // Обновляем кнопки
+        $('#velocityBtn').removeClass('active btn-velocity').addClass('btn-secondary');
+        $('#positionBtn').removeClass('btn-secondary').addClass('active btn-position');
+        
+        // Обновляем индикатор режима
+        $('#position_state').html('<div class="alert alert-position"><span class="mode-indicator mode-position"></span>Режим позиционирования</div>');
+        
+        // Обновляем стили инпутов
+        $('.control-input').removeClass('velocity').addClass('position');
+    } else {
+        // Обновляем кнопки
+        $('#positionBtn').removeClass('active btn-position').addClass('btn-secondary');
+        $('#velocityBtn').removeClass('btn-secondary').addClass('active btn-velocity');
+        
+        // Обновляем индикатор режима
+        $('#position_state').html('<div class="alert alert-velocity"><span class="mode-indicator mode-velocity"></span>Режим управления скоростью</div>');
+        
+        // Обновляем стили инпутов
+        $('.control-input').removeClass('position').addClass('velocity');
+    }
 }
 
 function setControls () {
+    if (!ros || !ros.isConnected) {
+        console.log("ROS не подключен. Сначала подключитесь к ROS.");
+        $('#position_state').html('<div class="alert alert-danger">Ошибка: ROS не подключен</div>');
+        return;
+    }
+    
+    if (typeof positionMsg === 'undefined' || typeof poseMsg === 'undefined' || typeof twistMsg === 'undefined') {
+        console.log("Сообщения не инициализированы. Сначала подключитесь к ROS.");
+        $('#position_state').html('<div class="alert alert-danger">Ошибка: Сообщения не инициализированы</div>');
+        return;
+    }
+    
     x = document.getElementById("controlX").value;
     y = document.getElementById("controlY").value;
     z = document.getElementById("controlZ").value;
@@ -1536,3 +1806,23 @@ $(document).keydown(function(event){
     //console.log('undefined key: ' + event.keyCode);
   }
 });
+
+// Добавляем функцию init() в конец файла
+function init() {
+  // Инициализация интерфейса
+  console.log("Инициализация интерфейса");
+  
+  // Проверяем, подключены ли мы к ROS
+  if (ros && ros.isConnected) {
+    // Определяем текущий режим и обновляем UI
+    var isPositionMode = positionMsg && positionMsg.data;
+    updateControlModeUI(isPositionMode);
+  } else {
+    // Если не подключены, показываем соответствующее сообщение
+    $('#position_state').html('<div class="alert alert-warning"><i class="fas fa-exclamation-triangle mr-2"></i>Подключитесь к ROS для управления</div>');
+    
+    // Устанавливаем стили по умолчанию для кнопок и инпутов
+    $('#velocityBtn').addClass('btn-velocity');
+    $('.control-input').addClass('velocity');
+  }
+}

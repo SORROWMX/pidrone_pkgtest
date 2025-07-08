@@ -1,10 +1,13 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-<title>Javascript Interface to the PiDrone</title>
-
+<title>PiDrone</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/bootstrap.css">
 <link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css">
 
 <script type="text/javascript" src="js/three.js"></script>
 <script type="text/javascript" src="js/quaternion.min.js"></script>
@@ -15,165 +18,256 @@
 <script type="text/javascript" src="js/mjpegcanvas.js"></script>
 <script type="text/javascript" src="js/jquery-3.3.1.min.js"></script>
 <script type="text/javascript" src="js/bootstrap.js"></script>
-
 <script type="text/javascript" src="js/main.js"></script>
-
-
 </head>
 
 <body>
     <div class="container-fluid">
-        <nav class="navbar navbar-expand-lg navbar-light bg-light">
-          <div class="navbar-brand" href="#">PiDrone Web Interface</div>
-          <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-          </button>
+        <nav class="navbar navbar-expand-lg navbar-dark">
+            <div class="navbar-brand">
+                <i class="fas fa-drone"></i> PiDrone Панель Управления
+            </div>
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Переключить навигацию">
+                <span class="navbar-toggler-icon"></span>
+            </button>
 
-          <div class="collapse navbar-collapse" id="navbarSupportedContent">
-              <ul class="navbar-nav mr-auto">
-                  <li class="nav-item">
-                      <p class="nav-link">
-                          Connection Status
-                      </p>
-                      <div class="alert alert-danger text-center" id="statusMessage">
-                          Disconnected
-                      </div>
-                  </li>
-                  <li class="nav-item">
-                      <p class="nav-link">
-                          Battery Voltage
-                      </p>
-                      <div class="alert alert-danger text-center" id="vbat">
-                          ???
-                      </div>
-                  </li>
-		  <li class="nav-item">
-                  <label for="hostname">Hostname:</label>
-                  <input type="text" class="form-control mr-sm-2 mx-2" id="hostname" value="coptra1">
-		  <input class="btn btn-primary my-2 my-sm-0" type="submit" value="Connect" name="submit" onclick="connect()"/>
-		  <input class="btn btn-primary my-2 my-sm-0" type="submit" value="Disconnect" name="submit" onclick="closeSession()"/>	      
-		  </li>
-              </ul>
-          </div>
+            <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                <ul class="navbar-nav mr-auto">
+                    <li class="nav-item mr-3">
+                        <span class="nav-link">
+                            Статус подключения
+                        </span>
+                        <div class="alert alert-danger text-center d-flex align-items-center justify-content-center" id="statusMessage">
+                            <span class="status-indicator status-disconnected mr-2"></span>
+                            Отключено
+                        </div>
+                    </li>
+                    <li class="nav-item mr-3">
+                        <span class="nav-link">
+                            Напряжение батареи
+                        </span>
+                        <div class="alert alert-danger text-center" id="vbat">
+                            ???
+                        </div>
+                    </li>
+                    <li class="nav-item">
+                        <div class="input-group host-input-group">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text host-label"><i class="fas fa-server mr-2"></i>Хост:</span>
+                            </div>
+                            <input type="text" class="form-control host-input" id="hostname" value="coptra1" placeholder="Введите имя хоста">
+                            <div class="input-group-append">
+                                <button class="btn btn-connect" type="button" onclick="connect()">
+                                    <i class="fas fa-plug"></i> Подключить
+                                </button>
+                                <button class="btn btn-disconnect" type="button" onclick="closeSession()">
+                                    <i class="fas fa-times"></i> Отключить
+                                </button>
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+            </div>
         </nav>
 
-        <div class="row mt-2">
-            <div class="col-sm text-center">
-
-	      <table><tr><td>
-                <div id="heightchart">
-                    <h4>Height</h4>
-                    <input class="btn btn-primary my-2 my-sm-0" type="submit" value="Pause" name="heightPauseBtn" onclick="togglePauseHeightChart(this)"/>
-                    <input class="btn btn-primary my-2 my-sm-0" type="submit" value="UKF Analysis" name="ukfAnalysisBtn" onclick="toggleUkfAnalysis(this)"/>
-                    <canvas id="heightChart" width="300" height="250"></canvas>
-                </div></td><td>
-                <div id="velocitychart">
-                    <h4>Speed</h4>
-                    <input class="btn btn-primary my-2 my-sm-0" type="submit" value="Pause (TODO)" name="heightPauseBtn" onclick="togglePauseVelocityChart(this)"/>
-                    <input class="btn btn-primary my-2 my-sm-0" type="submit" value="UKF Analysis (TODO)" name="velukfAnalysisBtn" onclick="toggleVelUkfAnalysis(this)"/>
-                    <canvas id="velocityChart" width="300" height="250"></canvas>
-                </div>	</td></tr></table>	
-
-                <div class="form-inline">
-                    <div class="form-group">
-                        <label for="heightMin">Minimum height:</label>
-                        <input type="number" step="0.05" class="form-control mx-2" id="heightMin" value="0" onchange="changeHeightChartYScaleMin()"/>
-                        <label for="heightMax">Maximum height:</label>
-                        <input type="number" step="0.05" class="form-control mx-2" id="heightMax" value="3" onchange="changeHeightChartYScaleMax()"/>
+        <div class="row mt-4 px-4">
+            <div class="col-md-6">
+                <div class="dashboard-panel">
+                    <h4><i class="fas fa-chart-line"></i> Высота</h4>
+                    <div class="d-flex justify-content-between mb-3">
+                        <button class="btn btn-primary btn-sm" onclick="togglePauseHeightChart(this)">
+                            <i class="fas fa-pause"></i> Пауза
+                        </button>
+                        <button class="btn btn-info btn-sm" onclick="toggleUkfAnalysis(this)">
+                            <i class="fas fa-chart-bar"></i> UKF Анализ
+                        </button>
+                    </div>
+                    <div style="height: 300px; position: relative;">
+                        <canvas id="heightChart"></canvas>
+                    </div>
+                    
+                    <div class="form-row mt-3">
+                        <div class="col-md-6">
+                            <label for="heightMin">Минимальная высота:</label>
+                            <input type="number" step="0.05" class="form-control" id="heightMin" value="0" onchange="changeHeightChartYScaleMin()"/>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="heightMax">Максимальная высота:</label>
+                            <input type="number" step="0.05" class="form-control" id="heightMax" value="3" onchange="changeHeightChartYScaleMax()"/>
+                        </div>
                     </div>
                 </div>
 
-
-                <div class="col-sm text-center" style="margin-top:20px;">
-                    <h4>Camera Image</h4>
-                    <img id="cameraImage" alt="Camera image" src="nocamera.jpg" width=320/>
-                    <div class="form-group">
-                        <small id="imagetopicHelp" class="form-text text-muted">Make sure you run <code>rosrun web_video_server web_video_server</code> and the image stream.</small>
+                <div class="dashboard-panel">
+                    <h4><i class="fas fa-tachometer-alt"></i> Скорость</h4>
+                    <div class="d-flex justify-content-between mb-3">
+                        <button class="btn btn-primary btn-sm" onclick="togglePauseVelocityChart(this)">
+                            <i class="fas fa-pause"></i> Пауза
+                        </button>
+                        <button class="btn btn-info btn-sm" onclick="toggleVelUkfAnalysis(this)">
+                            <i class="fas fa-chart-bar"></i> UKF Анализ
+                        </button>
+                    </div>
+                    <div style="height: 300px; position: relative;">
+                        <canvas id="velocityChart"></canvas>
                     </div>
                 </div>
             </div>
 
-            <div class="col-sm text-center">
-
-                <h4>Controls</h4>
-                <div class="btn-group btn-group-toggle" data-toggle="buttons">
-                    <label id="velocityBtn" class="btn btn-secondary active">
-                        <input type="radio" checked>
-                        Velocity
-                    </label>
-                    <br>
-                    <label id="positionBtn" class="btn btn-secondary">
-                        <input type="radio">Position
-                    </label>
-                    <div id="position_state"></div>
-                </div>
-
-                <div class="form-inline" style="margin-top: 20px; margin-bottom:20px;">
-                    <div class="form-group">
-                        <label for="controlX">x:</label>
-                        <input type="number" step="0.1" class="form-control mx-2" id="controlX" value="0" onchange="changeHeightChartYScaleMin()"/>
-                        <label for="controlY">y:</label>
-                        <input type="number" step="0.1" class="form-control mx-2" id="controlY" value="0" onchange="changeHeightChartYScaleMax()"/>
-                        <label for="controlZ">z:</label>
-                        <input type="number" step="0.1" class="form-control mx-2" id="controlZ" value="0" onchange="changeHeightChartYScaleMax()"/>
+            <div class="col-md-6">
+                <div class="dashboard-panel">
+                    <h4><i class="fas fa-camera"></i> Изображение с камеры</h4>
+                    <div class="text-center">
+                        <img id="cameraImage" alt="Изображение с камеры" src="nocamera.jpg" class="img-fluid rounded" style="max-width: 100%"/>
+                        <div class="form-group mt-2">
+                            <small id="imagetopicHelp" class="form-text text-muted">Убедитесь, что вы запустили <code>rosrun web_video_server web_video_server</code> и видеопоток.</small>
+                        </div>
                     </div>
                 </div>
-                <input class="btn btn-primary my-2 my-sm-0" type="submit" value="Set" name="controlSetBtn" onclick="setControls()"/>
 
-            <div id="xychart" style="margin-top:20px;">
-                <h4>Top View</h4>
-                <input class="btn btn-primary my-2 my-sm-0" type="submit" value="Pause" name="xyPauseBtn" onclick="togglePauseXYChart(this)"/>
-                <canvas id="xyChart" width="400" height="400"></canvas>
-            </div>
+                <div class="dashboard-panel">
+                    <h4><i class="fas fa-gamepad"></i> Управление</h4>
+                    
+                    <div class="btn-group btn-group-toggle mb-3" data-toggle="buttons">
+                        <label id="velocityBtn" class="btn btn-velocity active">
+                            <input type="radio" name="controlMode" checked>
+                            <i class="fas fa-tachometer-alt"></i> Скорость
+                        </label>
+                        <label id="positionBtn" class="btn btn-secondary">
+                            <input type="radio" name="controlMode">
+                            <i class="fas fa-map-marker-alt"></i> Позиция
+                        </label>
+                    </div>
+                    <div id="position_state" class="mb-3">
+                        <div class="alert alert-velocity"><span class="mode-indicator mode-velocity"></span>Режим управления скоростью</div>
+                    </div>
 
+                    <div class="form-row mb-3">
+                        <div class="col-md-4">
+                            <div class="control-input velocity">
+                                <label for="controlX">x:</label>
+                                <input type="number" step="0.1" class="form-control" id="controlX" value="0"/>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="control-input velocity">
+                                <label for="controlY">y:</label>
+                                <input type="number" step="0.1" class="form-control" id="controlY" value="0"/>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="control-input velocity">
+                                <label for="controlZ">z:</label>
+                                <input type="number" step="0.1" class="form-control" id="controlZ" value="0"/>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button class="btn btn-success" type="button" onclick="setControls()">
+                        <i class="fas fa-check"></i> Установить
+                    </button>
+                </div>
+
+                <div class="dashboard-panel">
+                    <h4><i class="fas fa-map-marker-alt"></i> Вид сверху</h4>
+                    <div class="d-flex justify-content-between mb-3">
+                        <button class="btn btn-primary btn-sm" onclick="togglePauseXYChart(this)">
+                            <i class="fas fa-pause"></i> Пауза
+                        </button>
+                    </div>
+                    <div style="height: 300px; position: relative;">
+                        <canvas id="xyChart"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
-        <hr>
 
-
-        <div class="row">
-            <div class="col-sm">
-                <table class="table table-bordered">
-                    <tbody>
-                      <tr>
-                        <th scope="col">Action</th>
-                        <td>;</td>
-                        <td>Space Bar</td>
-                        <td>T</td>
-                        <td>A</td>
-                        <td>D</td>
-                        <td>W</td>
-                        <td>S</td>
-                        <td>J</td>
-                        <td>L</td>
-                        <td>I</td>
-                        <td>K</td>
-                        <td>R</td>
-                        <td>P</td>
-                        <td>V</td>
-                        <td>M</td>
-                      </tr>
-                      <tr>
-                        <th scope="col">Key</th>
-                        <td>Arm</td>
-                        <td>Disarm</td>
-                        <td>Takeoff</td>
-                        <td>Yaw Left</td>
-                        <td>Yaw Right</tD>
-                        <td>Up</td>
-                        <td>Down</td>
-                        <td>Left</td>
-                        <td>Right</td>
-                        <td>Forward</td>
-                        <td>Backward</td>
-                        <td>Reset position hold</td>
-                        <td>Position Hold</td>
-                        <td>Velocity Control</td>
-                        <td>Toggle Mapping</td>
-                      </tr>
-                    </tbody>
-                </table>
+        <div class="row px-4 mb-4">
+            <div class="col-12">
+                <div class="dashboard-panel">
+                    <h4><i class="fas fa-keyboard"></i> Горячие клавиши</h4>
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <tbody>
+                                <tr>
+                                    <th scope="col">Действие</th>
+                                    <td>;</td>
+                                    <td>Пробел</td>
+                                    <td>T</td>
+                                    <td>A</td>
+                                    <td>D</td>
+                                    <td>W</td>
+                                    <td>S</td>
+                                    <td>J</td>
+                                    <td>L</td>
+                                    <td>I</td>
+                                    <td>K</td>
+                                    <td>R</td>
+                                    <td>P</td>
+                                    <td>V</td>
+                                    <td>M</td>
+                                </tr>
+                                <tr>
+                                    <th scope="col">Клавиша</th>
+                                    <td>Включить</td>
+                                    <td>Выключить</td>
+                                    <td>Взлет</td>
+                                    <td>Поворот влево</td>
+                                    <td>Поворот вправо</td>
+                                    <td>Вверх</td>
+                                    <td>Вниз</td>
+                                    <td>Влево</td>
+                                    <td>Вправо</td>
+                                    <td>Вперед</td>
+                                    <td>Назад</td>
+                                    <td>Сброс удержания позиции</td>
+                                    <td>Удержание позиции</td>
+                                    <td>Управление скоростью</td>
+                                    <td>Переключение карты</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
+
+        <footer class="text-center py-3 text-muted">
+            <p>&copy; 2023 PiDrone Web Interface</p>
+        </footer>
+    </div>
+
+    <script>
+    // Функция для обновления индикатора статуса
+    function updateStatusIndicator(connected) {
+        if (connected) {
+            $('#statusMessage').removeClass('alert-danger').addClass('alert-success');
+            $('.status-indicator').removeClass('status-disconnected').addClass('status-connected');
+        } else {
+            $('#statusMessage').removeClass('alert-success').addClass('alert-danger');
+            $('.status-indicator').removeClass('status-connected').addClass('status-disconnected');
+        }
+    }
+    
+    // Переопределяем функцию connect для добавления обработчиков статуса
+    var originalConnect = connect;
+    connect = function() {
+        originalConnect();
+        
+        if (ros) {
+            ros.on('connection', function() {
+                updateStatusIndicator(true);
+            });
+            
+            ros.on('error', function() {
+                updateStatusIndicator(false);
+            });
+            
+            ros.on('close', function() {
+                updateStatusIndicator(false);
+            });
+        }
+    };
+    </script>
 </body>
 </html>

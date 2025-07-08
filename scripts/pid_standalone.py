@@ -7,7 +7,7 @@ import math
 TARGET_HEIGHT = 0.75
 
 # PID parameters for height control - tuned for new throttle values
-KP = 60.0   # Увеличено для более быстрой реакции
+KP = 90.0   # Увеличено для более быстрой реакции
 KI = 0.12   # Увеличено для лучшего удержания высоты
 KD = 40.0   # Увеличено для лучшего демпфирования
 
