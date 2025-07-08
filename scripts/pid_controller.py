@@ -9,7 +9,7 @@ import traceback
 import argparse
 import numpy as np
 import command_values as cmds
-from pid_class import PID, PIDaxis, TARGET_HEIGHT
+from pid_class_new import PID, PIDaxis, TARGET_HEIGHT
 from geometry_msgs.msg import Pose, Twist
 from pidrone_pkg.msg import Mode, RC, State
 from std_msgs.msg import Float32, Empty, Bool

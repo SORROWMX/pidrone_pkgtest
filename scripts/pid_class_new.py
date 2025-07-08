@@ -296,7 +296,6 @@ class PID:
         # Use adaptive height control for throttle
         cmd_t = self.throttle.adaptive_height_step(error.z, time_elapsed)
         
-        print("%d, %.3f, %.3f, %.3f, %.3f" % (cmd_t, error.z, self.throttle._p, self.throttle._i, self.throttle._d))
         
         # Return commands in order [ROLL, PITCH, THROTTLE, YAW] (changed from ROLL, PITCH, YAW, THROTTLE)
         return [cmd_r, cmd_p, cmd_t, cmd_y]
