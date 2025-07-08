@@ -57,10 +57,10 @@
                             </div>
                             <input type="text" class="form-control host-input" id="hostname" value="coptra1" placeholder="Введите имя хоста">
                             <div class="input-group-append">
-                                <button class="btn btn-connect" type="button" onclick="connect()">
+                                <button id="connectButton" class="btn btn-connect" type="button" onclick="connect()">
                                     <i class="fas fa-plug"></i> Подключить
                                 </button>
-                                <button class="btn btn-disconnect" type="button" onclick="closeSession()">
+                                <button id="disconnectButton" class="btn btn-disconnect" type="button" onclick="closeSession()" style="display: none;">
                                     <i class="fas fa-times"></i> Отключить
                                 </button>
                             </div>
@@ -243,9 +243,13 @@
         if (connected) {
             $('#statusMessage').removeClass('alert-danger').addClass('alert-success');
             $('.status-indicator').removeClass('status-disconnected').addClass('status-connected');
+            $('#connectButton').hide();
+            $('#disconnectButton').show();
         } else {
             $('#statusMessage').removeClass('alert-success').addClass('alert-danger');
             $('.status-indicator').removeClass('status-connected').addClass('status-disconnected');
+            $('#connectButton').show();
+            $('#disconnectButton').hide();
         }
     }
     

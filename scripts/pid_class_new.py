@@ -1,26 +1,14 @@
 #!/usr/bin/env python
 
 import rospy
-import math
 
 # Target height to maintain in meters
-TARGET_HEIGHT = 0.75
+TARGET_HEIGHT = 0.65
 
 # PID parameters for height control - tuned for new throttle values
-KP = 60.0   # Optimized for faster response
-KI = 0.12   # Optimized for better height maintenance
-KD = 40.0   # Optimized for better damping
-
-# New parameters for improved height control
-MAX_VERTICAL_SPEED = 0.25  # m/s - maximum vertical speed
-HOVER_THROTTLE = 1450     # Hover throttle value (from real data)
-THROTTLE_MIN = 1400       # Minimum throttle value that starts to lift the drone
-THROTTLE_MAX = 1500       # Maximum safe throttle value
-
-# Takeoff parameters
-TAKEOFF_ACCELERATION_LIMIT = 0.15  # m/s² - acceleration limit during takeoff
-TAKEOFF_VELOCITY_LIMIT = 0.3       # m/s - maximum velocity during takeoff
-TAKEOFF_DECELERATION_START = 0.65  # % of target height - start of deceleration
+KP = 80.0   # Reduced for smoother control
+KI = 0.15   # Reduced to prevent oscillation
+KD = 40.0   # Reduced for less aggressive response
 
 #####################################################
 #						PID							#
@@ -46,20 +34,6 @@ class PIDaxis():
         # Initialize last_time to None, will be set on first step call
         self.last_time = None
         self.is_throttle_controller = False
-        # New parameters for improved height control
-        self.height_history = []  # Store recent height measurements
-        self.time_history = []    # Store corresponding timestamps
-        self.vertical_velocity = 0.0  # Estimated vertical velocity
-        self.height_setpoint = TARGET_HEIGHT  # Current target height
-        self.debug = True  # Enable/disable debug printing
-        # Takeoff phase detection
-        self.takeoff_phase = True  # Start in takeoff mode
-        self.takeoff_start_time = None
-        self.max_height_reached = 0.0
-        self.prev_throttle = HOVER_THROTTLE  # For smooth throttle changes
-        self.takeoff_stage = 0  # 0: initial acceleration, 1: ascent, 2: deceleration
-        # Flag to determine if drone is on the ground
-        self.on_ground = True
         
     def reset(self):
         self._old_err = None
@@ -74,17 +48,6 @@ class PIDaxis():
         self.previous_height_error = 0
         # Reset last_time to None
         self.last_time = None
-        # Reset new parameters
-        self.height_history = []
-        self.time_history = []
-        self.vertical_velocity = 0.0
-        # Reset takeoff variables
-        self.takeoff_phase = True
-        self.takeoff_start_time = None
-        self.max_height_reached = 0.0
-        self.prev_throttle = HOVER_THROTTLE
-        self.takeoff_stage = 0
-        self.on_ground = True
         
     def step(self, err, time_elapsed):
         # Special handling for throttle controller with improved height control logic
@@ -124,15 +87,9 @@ class PIDaxis():
         
     def adaptive_height_step(self, err, time_elapsed):
         """
-        Enhanced adaptive throttle control with improved behavior for height maintenance
-        Features:
-        - Vertical velocity estimation for better D-term calculation
-        - Anti-windup mechanism for integral term
-        - Dynamic gain scheduling based on height error and vertical speed
-        - Feedforward term for more responsive control
-        - Improved emergency handling
-        - Special takeoff handling to prevent overshoot
-        - Calibrated for real drone behavior
+        Advanced throttle control with adaptive behavior for height maintenance
+        based on height_control_flight.py's calculate_throttle function
+        Simplified to not rely on height change rate calculations
         """
         # Get current height from error (err = TARGET_HEIGHT - current_height)
         current_height = TARGET_HEIGHT - err/100.0  # Convert from cm to m
@@ -142,305 +99,85 @@ class PIDaxis():
         if self.last_time is None:
             self.last_time = current_time
             dt = 0.01  # Default small value for first iteration
-            if self.takeoff_phase:
-                self.takeoff_start_time = current_time
         else:
             dt = (current_time - self.last_time).to_sec()
             
         self.last_time = current_time
         
-        # Ensure dt is reasonable to prevent division by zero or extreme values
-        if dt <= 0.001 or dt > 0.5:
-            dt = 0.01  # Safeguard against unreasonable time deltas
+        if dt <= 0:
+            dt = 0.01  # Safeguard against zero division
             
-        # Store height and time history (keep last 5 points)
-        self.height_history.append(current_height)
-        self.time_history.append(current_time.to_sec())
-        if len(self.height_history) > 5:
-            self.height_history.pop(0)
-            self.time_history.pop(0)
+        print("Height: %.2fm, Target: %.2fm" % (current_height, TARGET_HEIGHT))
         
-        # Track maximum height reached (for takeoff phase detection)
-        self.max_height_reached = max(self.max_height_reached, current_height)
-            
-        # Calculate vertical velocity using linear regression if we have enough points
-        if len(self.height_history) >= 3:
-            # Simple velocity calculation using last two points for responsiveness
-            instant_velocity = (self.height_history[-1] - self.height_history[-2]) / dt
-            
-            # Apply low-pass filter to smooth velocity estimate
-            self.vertical_velocity = 0.7 * instant_velocity + 0.3 * self.vertical_velocity
-        
-        # Determine if drone is on the ground
-        if current_height <= 0.05 and self.vertical_velocity <= 0:
-            self.on_ground = True
-        else:
-            self.on_ground = False
-            
-        # Determine takeoff stage
-        if self.takeoff_phase:
-            height_ratio = current_height / TARGET_HEIGHT
-            if height_ratio < 0.3:
-                # Initial acceleration - smooth thrust increase
-                self.takeoff_stage = 0
-            elif height_ratio < TAKEOFF_DECELERATION_START:
-                # Main ascent - controlled speed
-                self.takeoff_stage = 1
-            else:
-                # Deceleration - preparation for stabilization
-                self.takeoff_stage = 2
-        
-        # Detect takeoff phase completion
-        # Exit takeoff phase if:
-        # 1. We've reached at least 90% of target height
-        # 2. We've been in takeoff phase for at least 2 seconds
-        # 3. Our vertical velocity is low (approaching stabilization)
-        if self.takeoff_phase and current_height >= TARGET_HEIGHT * 0.9 and \
-           (current_time - self.takeoff_start_time).to_sec() > 2.0:
-            # Only exit takeoff if we're moving slowly
-            if abs(self.vertical_velocity) < 0.1:
-                self.takeoff_phase = False
-                if self.debug:
-                    rospy.loginfo("Exiting takeoff phase at height %.2fm with velocity %.2fm/s", 
-                                 current_height, self.vertical_velocity)
-        
-        # Special handling for early takeoff phase - prevent integral windup
-        if self.takeoff_phase and current_height < TARGET_HEIGHT * 0.6:
-            # Reset integral term during early takeoff to prevent windup
-            self.height_integral = 0.0
-        
-        if self.debug:
-            rospy.loginfo("Height: %.2fm, Target: %.2fm, V_speed: %.2fm/s, Takeoff: %s, Stage: %d, OnGround: %s", 
-                         current_height, TARGET_HEIGHT, self.vertical_velocity, 
-                         "Yes" if self.takeoff_phase else "No", 
-                         self.takeoff_stage if self.takeoff_phase else -1,
-                         "Yes" if self.on_ground else "No")
-        
-        # Emergency handling with improved logic
-        if current_height > TARGET_HEIGHT * 1.4:  # Reduced from 1.75 to 1.4
-            if self.debug:
-                rospy.logwarn("EMERGENCY BRAKING: too high!")
-            return THROTTLE_MIN  # Minimum throttle to quickly descend
-        
-        # Prevent rapid descent if falling too fast
-        if self.vertical_velocity < -MAX_VERTICAL_SPEED * 1.1:  # Reduced from 1.5 to 1.1
-            if self.debug:
-                rospy.logwarn("EMERGENCY THROTTLE: falling too fast! %.2f m/s", self.vertical_velocity)
-            return HOVER_THROTTLE + 10  # Reduced from +30 to +10
+        # Emergency braking only when too high
+        if current_height > TARGET_HEIGHT * 1.75:
+            print("EMERGENCY BRAKING: too high!")
+            return 1400  # Minimum throttle to quickly descend
             
         # Calculate error
         error = TARGET_HEIGHT - current_height
         
-        # Smooth error to reduce sudden changes (exponential smoothing)
-        smoothed_error = error * 0.6 + self.previous_height_error * 0.4  # Increased smoothing
+        # Smooth error to reduce sudden changes
+        smoothed_error = error * 0.8 + self.previous_height_error * 0.2
         
-        # Update integral term with anti-windup mechanism
-        # Only integrate when within reasonable range of target and not moving too fast
-        if abs(error) < 0.15 and abs(self.vertical_velocity) < MAX_VERTICAL_SPEED * 0.7:  # Narrowed integration range
-            # Reduce integral gain during takeoff
-            integral_gain = 0.15 if self.takeoff_phase else 0.3
-            self.height_integral = self.height_integral + error * dt * integral_gain
-            
-            # Dynamic integral limits based on error magnitude
-            i_limit = 0.06 * (1.0 - min(1.0, abs(error) / 0.15))  # Reduced integral limit
-            self.height_integral = max(-i_limit, min(self.height_integral, i_limit))
-        else:
-            # Outside normal operating range - quickly decay integral term
-            self.height_integral *= 0.85  # Faster integral reset
+        # Update integral term with time consideration
+        self.height_integral = self.height_integral + error * dt * 0.5
+        self.height_integral = max(-0.1, min(self.height_integral, 0.1))  # Limit integral
         
-        # Calculate derivative with vertical velocity for better performance
-        derivative = -self.vertical_velocity  # Negative because positive velocity means decreasing error
+        # Calculate derivative with smoothed error
+        derivative = (smoothed_error - self.previous_height_error) / dt
         
-        # Calculate PID terms - adjust gains during takeoff
-        if self.takeoff_phase:
-            # Use different gains based on takeoff stage
-            if self.takeoff_stage == 0:
-                # Initial acceleration - soft P, almost no I, high D for acceleration control
-                takeoff_kp = KP * 0.5
-                takeoff_ki = KI * 0.1
-                takeoff_kd = KD * 1.5
-            elif self.takeoff_stage == 1:
-                # Main ascent - medium P, low I, high D
-                takeoff_kp = KP * 0.6
-                takeoff_ki = KI * 0.3
-                takeoff_kd = KD * 1.3
-            else:  # stage 2
-                # Deceleration - low P, medium I, very high D
-                takeoff_kp = KP * 0.5
-                takeoff_ki = KI * 0.4
-                takeoff_kd = KD * 1.6
-            
-            p_term = takeoff_kp * smoothed_error
-            i_term = takeoff_ki * self.height_integral
-            d_term = takeoff_kd * derivative
-        else:
-            # Normal operation
-            p_term = KP * smoothed_error
-            i_term = KI * self.height_integral
-            d_term = KD * derivative
+        # Calculate PID terms
+        p_term = KP * smoothed_error
+        i_term = KI * self.height_integral
+        d_term = KD * derivative
         
-        # Add feedforward term based on target height
-        # This helps maintain hover without relying solely on integral term
-        ff_term = HOVER_THROTTLE - self.midpoint
-        
-        # Dynamic gain scheduling based on error and vertical speed
         if current_height > TARGET_HEIGHT:
-            # Above target height - need to descend
+            # Above target height
             height_diff = current_height - TARGET_HEIGHT
             
-            # Adjust descent rate based on how high we are
-            if height_diff > 0.2:  # Reduced from 0.3 to 0.2
-                # Significantly above target - stronger descent
-                base_throttle = HOVER_THROTTLE - 25  # Reduced from -40 to -25
-                gain = 0.5   # Reduced from 0.6 to 0.5
-            elif height_diff > 0.08:  # Reduced from 0.1 to 0.08
-                base_throttle = HOVER_THROTTLE - 15  # Reduced from -20 to -15
-                gain = 0.55  # Reduced from 0.67 to 0.55
+            if height_diff > 0.1: 
+                base_throttle = 1450  # Set to 1410 for descent
+                gain = 0.6
             else: 
-                # Close to target - gentle descent
-                base_throttle = HOVER_THROTTLE - 7   # Reduced from -10 to -7
-                gain = 0.65  # Reduced from 0.76 to 0.65
-                
-            # Reduce descent rate if already descending quickly
-            if self.vertical_velocity < -0.12:  # Reduced from -0.2 to -0.12
-                gain *= (1.0 + 0.35 * min(1.0, -self.vertical_velocity / MAX_VERTICAL_SPEED))
+                base_throttle = 1450  # Set to 1410 for descent
+                gain = 0.7
                 
             throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)
         else:
-            # Below target - need to ascend
+            # Below target - gentle control
+            # Adaptive base throttle based on distance to target
             height_diff = TARGET_HEIGHT - current_height
             
-            # Special handling for takeoff phase
-            if self.takeoff_phase:
-                # During takeoff, use more conservative approach
-                if self.takeoff_stage == 0:
-                    # Initial acceleration - very smooth thrust increase
-                    if self.on_ground:
-                        # If drone is on the ground, need more thrust for liftoff
-                        base_throttle = HOVER_THROTTLE + 15
-                        gain = 0.6
-                    else:
-                        base_throttle = HOVER_THROTTLE + 10
-                        gain = 0.5
-                    
-                    # Limit acceleration during takeoff
-                    if self.vertical_velocity > TAKEOFF_VELOCITY_LIMIT * 0.5:
-                        # If already at half target speed, start limiting acceleration
-                        base_throttle = HOVER_THROTTLE + 5
-                        gain = 0.4
-                        
-                elif self.takeoff_stage == 1:
-                    # Main ascent - controlled speed
-                    if height_diff > 0.25:
-                        base_throttle = HOVER_THROTTLE + 12
-                        gain = 0.6
-                    else:
-                        base_throttle = HOVER_THROTTLE + 8
-                        gain = 0.55
-                        
-                    # Control ascent speed
-                    if self.vertical_velocity > TAKEOFF_VELOCITY_LIMIT:
-                        # If exceeded target speed, reduce thrust
-                        velocity_excess = (self.vertical_velocity - TAKEOFF_VELOCITY_LIMIT) / TAKEOFF_VELOCITY_LIMIT
-                        base_throttle -= int(velocity_excess * 12)
-                        
-                else:  # stage 2 - deceleration
-                    # Deceleration before reaching target
-                    # The closer to target and higher speed, the stronger the braking
-                    height_ratio = current_height / TARGET_HEIGHT
-                    
-                    if height_ratio > 0.9:
-                        # Very close to target - almost hovering
-                        base_throttle = HOVER_THROTTLE - 2
-                        gain = 0.5
-                    elif height_ratio > 0.8:
-                        # Close to target - start braking
-                        base_throttle = HOVER_THROTTLE + 2
-                        gain = 0.55
-                    else:
-                        # Approaching target - prepare for braking
-                        base_throttle = HOVER_THROTTLE + 5
-                        gain = 0.6
-                    
-                    # Progressive braking based on speed
-                    if self.vertical_velocity > 0.1:
-                        # Brake harder with higher speed
-                        braking = min(1.0, self.vertical_velocity / TAKEOFF_VELOCITY_LIMIT) * min(1.0, height_ratio / 0.9)
-                        base_throttle -= int(braking * 15)  # Up to 15 units of thrust reduction
-                
-                # Global speed limit for all takeoff stages
-                if self.vertical_velocity > TAKEOFF_VELOCITY_LIMIT * 1.2:
-                    # Emergency braking when speed exceeded
-                    base_throttle = HOVER_THROTTLE - 8
-                    gain = 0.4
+            if height_diff > 0.3:
+                # Significantly below target - stronger response
+                base_throttle = 1480  # Set to 1480 for takeoff
+                gain = 0.9
+            elif height_diff > 0.1:
+                # Moderately below target
+                base_throttle = 1480  # Set to 1480 for takeoff
+                gain = 0.8
+            elif height_diff > 0.05:
+                # Slightly below target
+                base_throttle = 1450  # Slightly lower
+                gain = 0.7
             else:
-                # Normal operation (not takeoff)
-                # Adjust ascent rate based on how low we are
-                if height_diff > 0.2:  # Reduced from 0.3 to 0.2
-                    # Significantly below target - stronger response
-                    base_throttle = HOVER_THROTTLE + 15  # Reduced from +30 to +15
-                    gain = 0.8  # Reduced from 0.9 to 0.8
-                elif height_diff > 0.08:  # Reduced from 0.1 to 0.08
-                    # Moderately below target
-                    base_throttle = HOVER_THROTTLE + 10  # Reduced from +20 to +10
-                    gain = 0.7  # Reduced from 0.8 to 0.7
-                elif height_diff > 0.04:  # Reduced from 0.05 to 0.04
-                    # Slightly below target
-                    base_throttle = HOVER_THROTTLE + 5   # Reduced from +10 to +5
-                    gain = 0.6  # Reduced from 0.7 to 0.6
-                else:
-                    # Very close to target
-                    base_throttle = HOVER_THROTTLE
-                    gain = 0.55  # Reduced from 0.65 to 0.55
-                
-            # Reduce ascent rate if already ascending quickly
-            if self.vertical_velocity > 0.12:  # Reduced from 0.2 to 0.12
-                gain *= (1.0 - 0.3 * min(1.0, self.vertical_velocity / MAX_VERTICAL_SPEED))
+                # Very close to target
+                base_throttle = 1450  # Between takeoff and descent values
+                gain = 0.6
                 
             throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)
         
-        # Add feedforward term
-        throttle += ff_term
-        
-        # Limit throttle change rate for smoother control
-        max_throttle_change = 8  # Maximum change per step
-        if self.takeoff_phase:
-            # During takeoff, even smoother changes
-            max_throttle_change = 4
-            
-        throttle_change = throttle - self.prev_throttle
-        if abs(throttle_change) > max_throttle_change:
-            # Limit the change
-            throttle = self.prev_throttle + max_throttle_change * (1 if throttle_change > 0 else -1)
-        
-        # Apply nonlinear mapping to throttle for better control at extremes
-        # This makes control more sensitive near hover point and less sensitive at extremes
-        throttle_range = THROTTLE_MAX - THROTTLE_MIN
-        normalized_throttle = (throttle - THROTTLE_MIN) / float(throttle_range)
-        normalized_throttle = max(0.0, min(normalized_throttle, 1.0))  # Ensure in [0,1]
-        
-        # Apply smooth nonlinear curve (sigmoid-like)
-        if normalized_throttle < 0.5:
-            normalized_throttle = 0.5 * math.pow(normalized_throttle * 2, 1.05)  # Smoother curve
-        else:
-            normalized_throttle = 0.5 + 0.5 * (1.0 - math.pow(2.0 - normalized_throttle * 2, 1.05))  # Smoother curve
-            
-        # Convert back to throttle value
-        throttle = int(THROTTLE_MIN + normalized_throttle * throttle_range)
-        
-        # Ensure throttle is within safe limits
-        throttle = max(THROTTLE_MIN, min(throttle, THROTTLE_MAX))
+        # Smoothly limit throttle range
+        throttle = max(1380, min(throttle, 1520))  # Narrower range
         
         # Store values for next iteration
         self.previous_height = current_height
         self.previous_height_error = smoothed_error
-        self.prev_throttle = throttle
         
-        if self.debug:
-            rospy.loginfo("Throttle: %d, Error: %.2f, V: %.2f m/s, P: %.2f, I: %.2f, D: %.2f", 
-                         throttle, error, self.vertical_velocity, p_term, i_term, d_term)
+        print("Throttle: %d, Error: %.2f, P: %.2f, I: %.2f, D: %.2f" % (throttle, error, p_term, i_term, d_term))
         
         return throttle
 
@@ -462,7 +199,7 @@ class PID:
                                   0, #0.5/height_factor * battery_factor,
                                   1,
                                   i_range=(-400, 400), control_range=(1100, 1600),
-                                  d_range=(-40, 40), midpoint=1300)  # Changed from 1300 to 1450
+                                  d_range=(-40, 40), midpoint=1300)
                  ):
 
         self.trim_controller_cap_plane = 0.05
@@ -559,9 +296,7 @@ class PID:
         # Use adaptive height control for throttle
         cmd_t = self.throttle.adaptive_height_step(error.z, time_elapsed)
         
-        if self.throttle.debug:
-            rospy.loginfo("%d, %.3f, %.3f, %.3f, %.3f", 
-                         cmd_t, error.z, self.throttle._p, self.throttle._i, self.throttle._d)
+        print("%d, %.3f, %.3f, %.3f, %.3f" % (cmd_t, error.z, self.throttle._p, self.throttle._i, self.throttle._d))
         
         # Return commands in order [ROLL, PITCH, THROTTLE, YAW] (changed from ROLL, PITCH, YAW, THROTTLE)
         return [cmd_r, cmd_p, cmd_t, cmd_y]

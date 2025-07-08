@@ -248,18 +248,14 @@ class MultiWii:
                 self.box = temp
                 return self.box
             elif code == MultiWii.ANALOG:
-                # INAV прошивка имеет другой формат данных для MSP_ANALOG
-                # Для INAV: формат '<B2Hh' (байт, 2 полуслова, знаковое полуслово)
                 try:
-                    # Попробовать распаковать данные в формате INAV
                     temp = struct.unpack('<B2Hh', data)
-                    self.analog['vbat'] = temp[0] / 10  # напряжение в вольтах
-                    self.analog['intPowerMeterSum'] = temp[1]  # потребленная энергия в mAh
-                    self.analog['rssi'] = temp[2]  # RSSI в %
-                    self.analog['amperage'] = temp[3] / 100  # ток в амперах (деление на 100)
+                    self.analog['vbat'] = temp[0] / 10  
+                    self.analog['intPowerMeterSum'] = temp[1]  
+                    self.analog['rssi'] = temp[2]  
+                    self.analog['amperage'] = temp[3] / 100  
                     self.analog['timestamp'] = readTime
                 except struct.error:
-                    # Если формат INAV не подошел, используем стандартный формат
                     temp = struct.unpack('<B2HhH', data)
                     self.analog['vbat'] = temp[0]
                     self.analog['intPowerMeterSum'] = temp[1]

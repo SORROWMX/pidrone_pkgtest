@@ -46,8 +46,15 @@ class OpticalFlowNode(object):
         y = msg.y
 
         # calculate the planar and yaw motions
-        x_motion = np.sum(x) * self.flow_coeff * self.altitude
-        y_motion = np.sum(y) * self.flow_coeff * self.altitude
+        # Original
+        # x_motion = np.sum(x) * self.flow_coeff * self.altitude
+        # y_motion = np.sum(y) * self.flow_coeff * self.altitude
+
+        # Optimized
+        # Calculate coefficient once
+        combined_coeff = self.flow_coeff * self.altitude
+        x_motion = np.sum(x) * combined_coeff
+        y_motion = np.sum(y) * combined_coeff
         twist_msg = TwistStamped()
         twist_msg.header.stamp = rospy.Time.now()
         twist_msg.twist.linear.x = x_motion

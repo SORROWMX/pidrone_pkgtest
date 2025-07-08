@@ -45,7 +45,11 @@ var spanningFullWindow = false;
 
 function closeSession(){
   console.log("Closing connections.");
-  ros.close();
+  if (ros) {
+    ros.close();
+    // Обновляем состояние кнопок
+    toggleConnectionButtons(false);
+  }
   return false;
 }
 
@@ -53,10 +57,10 @@ function closeSession(){
 function connect() {
     // Connect to ROS.
     if(ros && ros.isConnected) {
-	return
+        return;
     }
     
-    var url = 'ws://' + document.getElementById('hostname').value + ':9090'
+    var url = 'ws://' + document.getElementById('hostname').value + ':9090';
     ros = new ROSLIB.Ros({
         url : url
     });
@@ -72,6 +76,8 @@ function connect() {
       //printProperties(error);
       document.getElementById('statusMessage').innerHTML='<span class="status-indicator status-disconnected mr-2"></span>Ошибка подключения';
       $('#statusMessage').addClass('alert-danger').removeClass('alert-success');
+      // Обновляем состояние кнопок
+      toggleConnectionButtons(false);
     });
 
     ros.on('connection', function() {
@@ -79,6 +85,8 @@ function connect() {
       //printProperties(error);
       document.getElementById('statusMessage').innerHTML='<span class="status-indicator status-connected mr-2"></span>Подключено';
       $('#statusMessage').addClass('alert-success').removeClass('alert-danger');
+      // Обновляем состояние кнопок
+      toggleConnectionButtons(true);
     });
 
     ros.on('close', function() {
@@ -86,6 +94,8 @@ function connect() {
       //printProperties(error);
       document.getElementById('statusMessage').innerHTML='<span class="status-indicator status-disconnected mr-2"></span>Отключено';
       $('#statusMessage').addClass('alert-danger').removeClass('alert-success');
+      // Обновляем состояние кнопок
+      toggleConnectionButtons(false);
     });
 
     /*
@@ -1817,6 +1827,8 @@ function init() {
     // Определяем текущий режим и обновляем UI
     var isPositionMode = positionMsg && positionMsg.data;
     updateControlModeUI(isPositionMode);
+    // Обновляем состояние кнопок подключения
+    toggleConnectionButtons(true);
   } else {
     // Если не подключены, показываем соответствующее сообщение
     $('#position_state').html('<div class="alert alert-warning"><i class="fas fa-exclamation-triangle mr-2"></i>Подключитесь к ROS для управления</div>');
@@ -1824,5 +1836,21 @@ function init() {
     // Устанавливаем стили по умолчанию для кнопок и инпутов
     $('#velocityBtn').addClass('btn-velocity');
     $('.control-input').addClass('velocity');
+    
+    // Обновляем состояние кнопок подключения
+    toggleConnectionButtons(false);
   }
+}
+
+// Функция для переключения видимости кнопок подключения/отключения
+function toggleConnectionButtons(isConnected) {
+    if (isConnected) {
+        $('#connectButton').hide();
+        $('#disconnectButton').show();
+        $('#hostname').prop('disabled', true).addClass('disabled-input');
+    } else {
+        $('#connectButton').show();
+        $('#disconnectButton').hide();
+        $('#hostname').prop('disabled', false).removeClass('disabled-input');
+    }
 }
