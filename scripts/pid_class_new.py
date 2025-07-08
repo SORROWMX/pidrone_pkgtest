@@ -151,21 +151,21 @@ class PIDaxis():
             height_diff = TARGET_HEIGHT - current_height
             
             if height_diff > 0.3:
-                # Significantly below target - stronger response
-                base_throttle = 1480  # Set to 1480 for takeoff
-                gain = 0.9
+                # Significantly below target - gentler response for slow takeoff
+                base_throttle = 1460  # Уменьшить с 1480 до 1460
+                gain = 0.7  # Уменьшить с 0.9 до 0.7
             elif height_diff > 0.1:
                 # Moderately below target
-                base_throttle = 1480  # Set to 1480 for takeoff
-                gain = 0.8
+                base_throttle = 1460  # Уменьшить с 1480 до 1460
+                gain = 0.6  # Уменьшить с 0.8 до 0.6
             elif height_diff > 0.05:
                 # Slightly below target
-                base_throttle = 1450  # Slightly lower
-                gain = 0.7
+                base_throttle = 1440  # Уменьшить с 1450 до 1440
+                gain = 0.5  # Уменьшить с 0.7 до 0.5
             else:
                 # Very close to target
-                base_throttle = 1450  # Between takeoff and descent values
-                gain = 0.6
+                base_throttle = 1440  # Уменьшить с 1450 до 1440
+                gain = 0.5  # Уменьшить с 0.6 до 0.5
                 
             throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)

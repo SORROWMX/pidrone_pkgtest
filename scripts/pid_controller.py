@@ -109,7 +109,7 @@ class PIDController(object):
         # Takeoff stabilization flag and timer
         self.stabilizing_takeoff = False
         self.takeoff_start_time = None
-        self.takeoff_stabilization_duration = 3.0  # seconds
+        self.takeoff_stabilization_duration = 5.0  # seconds
 
     # ROS SUBSCRIBER CALLBACK METHODS
     #################################
@@ -346,9 +346,6 @@ class PIDController(object):
         if self.takeoff_start_time is None:
             self.takeoff_start_time = rospy.get_time()
             self.stabilizing_takeoff = True
-            print("\n=== TAKEOFF STABILIZATION STARTED ===")
-            print("Target height: {:.3f}m".format(TARGET_HEIGHT))
-            print("Current height: {:.3f}m".format(self.current_position.z))
             print("Stabilizing for {:.1f} seconds...".format(self.takeoff_stabilization_duration))
             return False
             
@@ -356,10 +353,6 @@ class PIDController(object):
         elapsed_time = rospy.get_time() - self.takeoff_start_time
         if elapsed_time >= self.takeoff_stabilization_duration:
             print("\n=== TAKEOFF STABILIZATION COMPLETE ===")
-            print("Final height: {:.3f}m (target: {:.3f}m)".format(
-                self.current_position.z, TARGET_HEIGHT))
-            print("Height error: {:.3f}m".format(abs(self.current_position.z - TARGET_HEIGHT)))
-            print("Switching to normal flight control mode\n")
             self.stabilizing_takeoff = False
             self.takeoff_start_time = None
             return True
