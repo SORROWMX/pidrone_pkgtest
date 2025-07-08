@@ -34,6 +34,8 @@ class PIDaxis():
         # Initialize last_time to None, will be set on first step call
         self.last_time = None
         self.is_throttle_controller = False
+        # Landing mode flag
+        self.landing_mode = False
         
     def reset(self):
         self._old_err = None
@@ -48,6 +50,8 @@ class PIDaxis():
         self.previous_height_error = 0
         # Reset last_time to None
         self.last_time = None
+        # Reset landing mode
+        self.landing_mode = False
         
     def step(self, err, time_elapsed):
         # Special handling for throttle controller with improved height control logic
@@ -92,7 +96,14 @@ class PIDaxis():
         Simplified to not rely on height change rate calculations
         """
         # Get current height from error (err = TARGET_HEIGHT - current_height)
-        current_height = TARGET_HEIGHT - err/100.0  # Convert from cm to m
+        # If landing_mode is active, target_height is provided directly in err
+        if self.landing_mode:
+            # During landing, err is the direct error from target height (not relative to TARGET_HEIGHT)
+            current_height = -err/100.0  # Convert from cm to m
+            target_height = 0  # The target height is already factored into err
+        else:
+            current_height = TARGET_HEIGHT - err/100.0  # Convert from cm to m
+            target_height = TARGET_HEIGHT
         
         # Calculate time elapsed since last call
         current_time = rospy.Time.now()
@@ -106,16 +117,21 @@ class PIDaxis():
         
         if dt <= 0:
             dt = 0.01  # Safeguard against zero division
-            
-        print("Height: %.2fm, Target: %.2fm" % (current_height, TARGET_HEIGHT))
         
-        # Emergency braking only when too high
-        if current_height > TARGET_HEIGHT * 1.75:
+        if not self.landing_mode:
+            print("Height: %.2fm, Target: %.2fm" % (current_height, target_height))
+        
+        # Emergency braking only when too high and not in landing mode
+        if current_height > TARGET_HEIGHT * 1.75 and not self.landing_mode:
             print("EMERGENCY BRAKING: too high!")
             return 1400  # Minimum throttle to quickly descend
             
         # Calculate error
-        error = TARGET_HEIGHT - current_height
+        if self.landing_mode:
+            # In landing mode, err is already the direct error
+            error = err/100.0  # Convert from cm to m
+        else:
+            error = TARGET_HEIGHT - current_height
         
         # Smooth error to reduce sudden changes
         smoothed_error = error * 0.8 + self.previous_height_error * 0.2
@@ -132,9 +148,25 @@ class PIDaxis():
         i_term = KI * self.height_integral
         d_term = KD * derivative
         
-        if current_height > TARGET_HEIGHT:
+        # Special handling for landing mode
+        if self.landing_mode:
+            # Gentler descent during landing
+            base_throttle = 1430  # Lower base throttle for landing
+            gain = 0.5  # Reduced gain for smoother landing
+            
+            # When very close to the ground, reduce throttle further
+            if current_height < 0.15:
+                base_throttle = 1400
+                gain = 0.4
+                
+            throttle_adjustment = p_term + i_term + d_term
+            throttle = base_throttle + int(throttle_adjustment * gain)
+            
+            # Limit throttle range during landing
+            throttle = max(1380, min(throttle, 1450))
+        elif current_height > target_height:
             # Above target height
-            height_diff = current_height - TARGET_HEIGHT
+            height_diff = current_height - target_height
             
             if height_diff > 0.1: 
                 base_throttle = 1450  # Set to 1410 for descent
@@ -148,7 +180,7 @@ class PIDaxis():
         else:
             # Below target - gentle control
             # Adaptive base throttle based on distance to target
-            height_diff = TARGET_HEIGHT - current_height
+            height_diff = target_height - current_height
             
             if height_diff > 0.3:
                 # Significantly below target - gentler response for slow takeoff
@@ -171,13 +203,15 @@ class PIDaxis():
             throttle = base_throttle + int(throttle_adjustment * gain)
         
         # Smoothly limit throttle range
-        throttle = max(1380, min(throttle, 1520))  # Narrower range
+        if not self.landing_mode:
+            throttle = max(1380, min(throttle, 1520))  # Narrower range
         
         # Store values for next iteration
         self.previous_height = current_height
         self.previous_height_error = smoothed_error
         
-        print("Throttle: %d, Error: %.2f, P: %.2f, I: %.2f, D: %.2f" % (throttle, error, p_term, i_term, d_term))
+        if not self.landing_mode or int(rospy.get_time() * 2) != int((rospy.get_time() - 0.1) * 2):
+            print("Throttle: %d, Error: %.2f, P: %.2f, I: %.2f, D: %.2f" % (throttle, error, p_term, i_term, d_term))
         
         return throttle
 
@@ -299,3 +333,7 @@ class PID:
         
         # Return commands in order [ROLL, PITCH, THROTTLE, YAW] (changed from ROLL, PITCH, YAW, THROTTLE)
         return [cmd_r, cmd_p, cmd_t, cmd_y]
+        
+    def set_landing_mode(self, is_landing):
+        """Set landing mode flag for throttle controller"""
+        self.throttle.landing_mode = is_landing

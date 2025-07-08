@@ -59,6 +59,9 @@ class FlightController(object):
         # store the time for angular velocity calculations
         self.time = rospy.Time.now()
         self.debug_output = False  # Set to True only when debugging
+        # Landing variables
+        self.landing_complete = False
+        self.landing_start_time = None
 
         # Initialize the Imu Message
         ############################
@@ -102,7 +105,7 @@ class FlightController(object):
 
     def fly_commands_callback(self, msg):
         """ Store and send the flight commands if the current mode is FLYING """
-        if self.curr_mode == 'FLYING':
+        if self.curr_mode == 'FLYING' or self.curr_mode == 'LAND':
             r = msg.roll
             p = msg.pitch
             y = msg.yaw
@@ -210,6 +213,7 @@ class FlightController(object):
                 self.command = cmds.arm_cmd
             elif self.prev_mode == 'ARMED':
                 self.command = cmds.idle_cmd
+        # Landing mode is handled by PID controller
 
     # Helper Methods:
     #################
@@ -245,14 +249,21 @@ class FlightController(object):
         return 0 if abs(n) < 0.0001 else n
 
     def ctrl_c_handler(self, signal, frame):
-        """ Disarm the drone and quits the flight controller node """
-        print("\nCaught ctrl-c! About to Disarm!")
-        self.board.send_raw_command(8, MultiWii.SET_RAW_RC, cmds.disarm_cmd)
-        self.board.receiveDataPacket()
-        rospy.sleep(1)
-        self.modepub.publish('DISARMED')
-        print("Successfully Disarmed")
-        sys.exit()
+        """ Initiate landing sequence when ctrl-c is pressed """
+        print("\nCaught ctrl-c! Initiating landing sequence...")
+        # First try to land gracefully
+        self.modepub.publish('LAND')
+        # Give some time for the landing mode to be processed
+        rospy.sleep(0.5)
+        # Check if we're already in landing mode or if we need to force disarm
+        if self.curr_mode != 'LAND':
+            print("Forcing disarm...")
+            self.board.send_raw_command(8, MultiWii.SET_RAW_RC, cmds.disarm_cmd)
+            self.board.receiveDataPacket()
+            rospy.sleep(1)
+            self.modepub.publish('DISARMED')
+            print("Successfully Disarmed")
+            sys.exit()
 
     # Heartbeat Callbacks: These update the last time that data was received
     #                       from a node
@@ -328,7 +339,7 @@ def main():
     rospy.Subscriber("/pidrone/state", State, fc.heartbeat_state_estimator_callback)
 
 
-    # signal.signal(signal.SIGINT, fc.ctrl_c_handler)
+    signal.signal(signal.SIGINT, fc.ctrl_c_handler)
     # set the loop rate (Hz)
     # Reduce loop rate to 40Hz to save CPU
     r = rospy.Rate(40)
