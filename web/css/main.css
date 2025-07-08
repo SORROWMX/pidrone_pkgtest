@@ -18,6 +18,7 @@
   --connect-color: #00d68f;
   --disconnect-color: #ff3d71;
   --host-label-bg: #1a1f3d;
+  --unknown-color: #b7bdd1;
 }
 
 body {
@@ -355,10 +356,90 @@ canvas {
 
 .status-connected {
   background-color: var(--success-color);
+  box-shadow: 0 0 5px var(--success-color);
 }
 
 .status-disconnected {
   background-color: var(--danger-color);
+  box-shadow: 0 0 5px var(--danger-color);
+}
+
+.status-unknown {
+  background-color: var(--unknown-color);
+}
+
+/* Node status table */
+.node-status-table th {
+  font-weight: 600;
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.node-status-table td {
+  vertical-align: middle;
+}
+
+/* Progress bars for drone state */
+.progress {
+  height: 0.6rem;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 0.5rem;
+  margin-top: 0.25rem;
+  overflow: hidden;
+}
+
+.progress-bar {
+  background-color: var(--primary-color);
+  transition: width 0.3s ease;
+}
+
+/* Drone state display */
+.drone-state-display h5 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: var(--text-color);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.5rem;
+}
+
+.drone-state-display label {
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+.drone-state-display .value {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+/* Progress bar colors */
+.progress-bar-x {
+  background-color: var(--primary-color);
+}
+
+.progress-bar-y {
+  background-color: var(--success-color);
+}
+
+.progress-bar-z {
+  background-color: var(--info-color);
+}
+
+.progress-bar-yaw {
+  background-color: var(--warning-color);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .drone-state-display .col-md-6 {
+    margin-bottom: 1.5rem;
+  }
+  
+  .node-status-table {
+    font-size: 0.875rem;
+  }
 }
 
 /* Mode indicators */

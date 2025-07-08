@@ -87,6 +87,9 @@ function connect() {
       $('#statusMessage').addClass('alert-success').removeClass('alert-danger');
       // Обновляем состояние кнопок
       toggleConnectionButtons(true);
+      
+      // Инициализация новых функций
+      setupStateSubscription();
     });
 
     ros.on('close', function() {
@@ -1853,4 +1856,76 @@ function toggleConnectionButtons(isConnected) {
         $('#disconnectButton').hide();
         $('#hostname').prop('disabled', false).removeClass('disabled-input');
     }
+}
+
+// Подписка на состояние дрона
+function setupStateSubscription() {
+    if (!ros || !ros.isConnected) {
+        console.log("ROS не подключен. Невозможно настроить подписку на состояние.");
+        return;
+    }
+    
+    var stateSub = new ROSLIB.Topic({
+        ros: ros,
+        name: '/pidrone/state/ema',
+        messageType: 'pidrone_pkg/State',
+        queue_length: 1,
+        throttle_rate: 100
+    });
+    
+    stateSub.subscribe(function(message) {
+        // Обновление позиции
+        document.getElementById('drone_x').textContent = message.pose_with_covariance.pose.position.x.toFixed(2);
+        document.getElementById('drone_y').textContent = message.pose_with_covariance.pose.position.y.toFixed(2);
+        document.getElementById('drone_z').textContent = message.pose_with_covariance.pose.position.z.toFixed(2);
+        
+        // Обновление скорости
+        document.getElementById('drone_vx').textContent = message.twist_with_covariance.twist.linear.x.toFixed(2);
+        document.getElementById('drone_vy').textContent = message.twist_with_covariance.twist.linear.y.toFixed(2);
+        document.getElementById('drone_vz').textContent = message.twist_with_covariance.twist.linear.z.toFixed(2);
+        
+        // Обновление ориентации (преобразование кватерниона в углы Эйлера)
+        var quaternion = message.pose_with_covariance.pose.orientation;
+        var euler = quaternionToEuler(quaternion);
+        document.getElementById('drone_yaw').textContent = (euler.yaw * 180 / Math.PI).toFixed(2);
+        
+        // Обновление прогресс-баров
+        updateProgressBars(message);
+    });
+}
+
+// Преобразование кватерниона в углы Эйлера
+function quaternionToEuler(q) {
+    return {
+        roll: Math.atan2(2 * (q.w * q.x + q.y * q.z), 1 - 2 * (q.x * q.x + q.y * q.y)),
+        pitch: Math.asin(2 * (q.w * q.y - q.z * q.x)),
+        yaw: Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+    };
+}
+
+// Обновление прогресс-баров
+function updateProgressBars(message) {
+    // Нормализация значений для прогресс-баров
+    var xPercent = ((message.pose_with_covariance.pose.position.x + 1) / 2 * 100).toFixed(0);
+    document.getElementById('drone_x_bar').style.width = xPercent + '%';
+    
+    var yPercent = ((message.pose_with_covariance.pose.position.y + 1) / 2 * 100).toFixed(0);
+    document.getElementById('drone_y_bar').style.width = yPercent + '%';
+    
+    var zPercent = (message.pose_with_covariance.pose.position.z / 3 * 100).toFixed(0);
+    document.getElementById('drone_z_bar').style.width = zPercent + '%';
+    
+    var vxPercent = ((message.twist_with_covariance.twist.linear.x + 1) / 2 * 100).toFixed(0);
+    document.getElementById('drone_vx_bar').style.width = vxPercent + '%';
+    
+    var vyPercent = ((message.twist_with_covariance.twist.linear.y + 1) / 2 * 100).toFixed(0);
+    document.getElementById('drone_vy_bar').style.width = vyPercent + '%';
+    
+    var vzPercent = ((message.twist_with_covariance.twist.linear.z + 1) / 2 * 100).toFixed(0);
+    document.getElementById('drone_vz_bar').style.width = vzPercent + '%';
+    
+    // Получаем углы Эйлера из кватерниона
+    var euler = quaternionToEuler(message.pose_with_covariance.pose.orientation);
+    var yawPercent = (((euler.yaw * 180 / Math.PI) + 180) / 360 * 100).toFixed(0);
+    document.getElementById('drone_yaw_bar').style.width = yawPercent + '%';
 }
