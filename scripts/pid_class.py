@@ -34,6 +34,7 @@ class PIDaxis():
         # Initialize last_time to None, will be set on first step call
         self.last_time = None
         self.is_throttle_controller = False
+        self.debug_output = False  # Установите True только для отладки
         
     def reset(self):
         self._old_err = None
@@ -68,10 +69,11 @@ class PIDaxis():
             self._i = max(self.i_range[0], min(self._i, self.i_range[1]))
 
         # Find the d component
-        self._d = (err - self._old_err) * self.kd / time_elapsed
+        smoothed_error = err * 0.6 + self.previous_height_error * 0.4
+        self._d = (smoothed_error - self._old_err) * self.kd / time_elapsed
         if self.d_range is not None:
             self._d = max(self.d_range[0], min(self._d, self.d_range[1]))
-        self._old_err = err
+        self._old_err = smoothed_error
 
         # Smooth over the last three d terms
         if self.smoothing:
@@ -137,11 +139,11 @@ class PIDaxis():
             height_diff = current_height - TARGET_HEIGHT
             
             if height_diff > 0.1: 
-                base_throttle = 1450  # Set to 1410 for descent
-                gain = 0.6
+                base_throttle = 1440  # Увеличить с 1410/1450 до 1440 для более медленного снижения
+                gain = 0.5  # Уменьшить с 0.6 до 0.5 для более плавного снижения
             else: 
-                base_throttle = 1450  # Set to 1410 for descent
-                gain = 0.7
+                base_throttle = 1445  # Увеличить для более мягкого приближения к цели
+                gain = 0.6  # Уменьшить с 0.7 до 0.6
                 
             throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)
@@ -151,21 +153,21 @@ class PIDaxis():
             height_diff = TARGET_HEIGHT - current_height
             
             if height_diff > 0.3:
-                # Significantly below target - stronger response
-                base_throttle = 1480  # Set to 1480 for takeoff
-                gain = 0.9
+                # Significantly below target - gentler response for slow takeoff
+                base_throttle = 1470  # Уменьшить с 1480 до 1470 для более плавного взлета
+                gain = 0.7  # Уменьшить с 0.9 до 0.7
             elif height_diff > 0.1:
                 # Moderately below target
-                base_throttle = 1480  # Set to 1480 for takeoff
-                gain = 0.8
+                base_throttle = 1475  # Установить 1475 для умеренного подъема
+                gain = 0.6  # Уменьшить с 0.8 до 0.6
             elif height_diff > 0.05:
                 # Slightly below target
-                base_throttle = 1450  # Slightly lower
-                gain = 0.7
+                base_throttle = 1460  # Увеличить с 1450 до 1460 для более стабильного приближения
+                gain = 0.5  # Уменьшить с 0.7 до 0.5
             else:
                 # Very close to target
-                base_throttle = 1450  # Between takeoff and descent values
-                gain = 0.6
+                base_throttle = 1450  # Оставить как есть
+                gain = 0.5  # Уменьшить с 0.6 до 0.5
                 
             throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)
@@ -177,7 +179,8 @@ class PIDaxis():
         self.previous_height = current_height
         self.previous_height_error = smoothed_error
         
-        print("Throttle: %d, Error: %.2f, P: %.2f, I: %.2f, D: %.2f" % (throttle, error, p_term, i_term, d_term))
+        if self.debug_output:
+            print("Throttle: %d, Error: %.2f, P: %.2f, I: %.2f, D: %.2f" % (throttle, error, p_term, i_term, d_term))
         
         return throttle
 
