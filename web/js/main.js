@@ -297,8 +297,14 @@ function connect() {
         var text = "";
         if (position) {
             text = "Position Mode";
+            // Обновляем уведомление для XY Chart при переключении в режим позиционирования
+            $('#xy_chart_info').removeClass('alert-warning').addClass('alert-info')
+                .html('<i class="fas fa-info-circle"></i> Данные о позиции активны. Карта обновляется.');
         } else {
             text = "Velocity Mode";
+            // Обновляем уведомление для XY Chart при переключении в режим скорости
+            $('#xy_chart_info').removeClass('alert-info').addClass('alert-warning')
+                .html('<i class="fas fa-exclamation-triangle"></i> Внимание: Данные о позиции недоступны в режиме скорости.');
         }
         element = document.getElementById("position_state");
         element.textContent = text;
@@ -306,16 +312,29 @@ function connect() {
 
     batterysub.subscribe(function(message) {
       //printProperties(message);
-      var mynumber = myround(message.vbat, 2);
-      document.getElementById('vbat').innerHTML=mynumber
-      if (message.vbat <= 11.3) {
-        document.getElementById('vbat').innerHTML=mynumber + " EMPTY!";
+      var voltage = message.vbat;
+      var mynumber = myround(voltage, 2);
+      
+      // Автоматическое определение типа батареи и установка порогов
+      var lowVoltageThreshold;
+      var batteryType = "";
+      
+      if (voltage > 15.0) { // Вероятно 4S (16.8V при полной зарядке)
+          lowVoltageThreshold = 14.0; // ~3.5V на ячейку для 4S
+          batteryType = "4S";
+      } else { // Предполагаем 3S (12.6V при полной зарядке)
+          lowVoltageThreshold = 11.1; // ~3.7V на ячейку для 3S
+          batteryType = "3S";
+      }
+      
+      document.getElementById('vbat').innerHTML = mynumber + "V " + batteryType;
+      
+      if (voltage <= lowVoltageThreshold) {
+        document.getElementById('vbat').innerHTML = mynumber + "V " + batteryType + " LOW!";
         $('#vbat').addClass('alert-danger').removeClass('alert-success');
       } else {
-        document.getElementById('vbat').innerHTML=mynumber;
         $('#vbat').addClass('alert-success').removeClass('alert-danger');
       }
-
     });
 
     var heightChartMinTime;
@@ -1723,6 +1742,10 @@ function updateControlModeUI(isPositionMode) {
         
         // Обновляем стили инпутов
         $('.control-input').removeClass('velocity').addClass('position');
+        
+        // Обновляем уведомление для XY Chart
+        $('#xy_chart_info').removeClass('alert-warning').addClass('alert-info')
+            .html('<i class="fas fa-info-circle"></i> Данные о позиции активны. Карта обновляется.');
     } else {
         // Обновляем кнопки
         $('#positionBtn').removeClass('active btn-position').addClass('btn-secondary');
@@ -1733,6 +1756,10 @@ function updateControlModeUI(isPositionMode) {
         
         // Обновляем стили инпутов
         $('.control-input').removeClass('position').addClass('velocity');
+        
+        // Обновляем уведомление для XY Chart
+        $('#xy_chart_info').removeClass('alert-info').addClass('alert-warning')
+            .html('<i class="fas fa-exclamation-triangle"></i> Внимание: Данные о позиции недоступны в режиме скорости.');
     }
 }
 
@@ -1839,6 +1866,10 @@ function init() {
     // Устанавливаем стили по умолчанию для кнопок и инпутов
     $('#velocityBtn').addClass('btn-velocity');
     $('.control-input').addClass('velocity');
+    
+    // Устанавливаем уведомление по умолчанию для XY Chart
+    $('#xy_chart_info').removeClass('alert-info').addClass('alert-warning')
+        .html('<i class="fas fa-exclamation-triangle"></i> Подключитесь к ROS для отображения данных о позиции.');
     
     // Обновляем состояние кнопок подключения
     toggleConnectionButtons(false);

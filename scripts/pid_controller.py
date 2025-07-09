@@ -106,11 +106,6 @@ class PIDController(object):
         # accomplished by calculate_travel_time
         self.path_planning = True
         
-        # Takeoff stabilization flag and timer
-        self.stabilizing_takeoff = False
-        self.takeoff_start_time = None
-        self.takeoff_stabilization_duration = 5.0  # seconds
-        
         # Landing parameters
         self.landing = False
         self.landing_start_time = None
@@ -440,9 +435,6 @@ class PIDController(object):
         self.pid.reset()
         self.lr_pid.reset()
         self.fb_pid.reset()
-        # reset takeoff stabilization
-        self.stabilizing_takeoff = False
-        self.takeoff_start_time = None
         # reset landing state
         self.landing = False
         self.landing_complete = False
@@ -463,34 +455,6 @@ class PIDController(object):
         msg.throttle = cmd[2]
         msg.yaw = cmd[3]
         self.cmdpub.publish(msg)
-
-    def takeoff_stabilization(self):
-        """
-        Handle initial takeoff height stabilization similar to height_control_flight.py
-        Returns True when stabilization is complete
-        """
-        # Initialize stabilization start time if not set
-        if self.takeoff_start_time is None:
-            self.takeoff_start_time = rospy.get_time()
-            self.stabilizing_takeoff = True
-            print("Stabilizing for {:.1f} seconds...".format(self.takeoff_stabilization_duration))
-            return False
-            
-        # Check if we've stabilized for long enough
-        elapsed_time = rospy.get_time() - self.takeoff_start_time
-        if elapsed_time >= self.takeoff_stabilization_duration:
-            print("\n=== TAKEOFF STABILIZATION COMPLETE ===")
-            self.stabilizing_takeoff = False
-            self.takeoff_start_time = None
-            return True
-            
-        # During stabilization, just focus on reaching target height
-        # Print status every 0.5 seconds
-        if int(elapsed_time * 2) != int((elapsed_time - 0.1) * 2):
-            height_error = abs(self.current_position.z - TARGET_HEIGHT)
-            print("Stabilizing: {:.1f}s - Height: {:.3f}m - Error: {:.3f}m".format(
-                elapsed_time, self.current_position.z, height_error))
-        return False
 
 def main(ControllerClass):
 
@@ -563,9 +527,7 @@ def main(ControllerClass):
         if pid_controller.current_mode == 'ARMED':
             if pid_controller.desired_mode == 'FLYING':
                 pid_controller.reset()
-                # Activate takeoff stabilization when transitioning to FLYING mode
-                pid_controller.stabilizing_takeoff = True
-                pid_controller.takeoff_start_time = None
+                # Removed takeoff stabilization code
         # if the drone is flying, send the fly_command
         elif pid_controller.current_mode == 'FLYING' or pid_controller.current_mode == 'LAND':
             if pid_controller.desired_mode == 'FLYING' or pid_controller.desired_mode == 'LAND':

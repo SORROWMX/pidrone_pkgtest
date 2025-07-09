@@ -77,9 +77,12 @@ class FlightController(object):
         self.battery_message = Battery()
         self.battery_message.vbat = None
         self.battery_message.amperage = None
-        # Adjust this based on how low the battery should discharge
-        self.minimum_voltage = 4.5
-
+        # Battery configuration
+        self.battery_cells = 0  # Auto-detect: 0=unknown, 3=3S, 4=4S
+        self.cell_voltage_full = 4.2  # Full charge voltage per cell
+        self.cell_voltage_low = 3.7   # Low battery warning threshold per cell
+        self.cell_voltage_critical = 3.5  # Critical battery threshold per cell
+        
         # Accelerometer parameters
         ##########################
         print("loading")
@@ -197,12 +200,26 @@ class FlightController(object):
     def update_battery_message(self):
         """
         Compute the ROS battery message by reading data from the board.
+        Also detect battery type based on voltage.
         """
         # extract vbat, amperage
         self.board.getData(MultiWii.ANALOG)
     
         self.battery_message.vbat = self.board.analog['vbat']
         self.battery_message.amperage = self.board.analog['amperage']
+        
+        # Auto-detect battery type if not yet determined
+        if self.battery_cells == 0 and self.battery_message.vbat > 0:
+            if self.battery_message.vbat > 15.0:  # Likely 4S (16.8V fully charged)
+                self.battery_cells = 4
+                print("Detected 4S LiPo battery")
+            elif self.battery_message.vbat > 10.0:  # Likely 3S (12.6V fully charged)
+                self.battery_cells = 3
+                print("Detected 3S LiPo battery")
+            else:
+                # Voltage too low for detection, assume 3S as fallback
+                self.battery_cells = 3
+                print("Battery voltage too low for detection, assuming 3S LiPo")
 
     def update_command(self):
         ''' Set command values if the mode is ARMED or DISARMED '''
@@ -327,6 +344,13 @@ class FlightController(object):
             curr_time - self.heartbeat_infrared > heartbeat_timeout or
             curr_time - self.heartbeat_state_estimator > heartbeat_timeout):
             disarm = True
+            
+        # Check battery voltage if battery type has been detected
+        if self.battery_cells > 0 and self.battery_message.vbat is not None:
+            critical_voltage = self.battery_cells * self.cell_voltage_critical
+            if self.battery_message.vbat <= critical_voltage:
+                print(f"\nCRITICAL BATTERY: {self.battery_message.vbat:.2f}V below threshold {critical_voltage:.2f}V")
+                disarm = True
             
         # Only print warning if actually too high
         if self.range > 0.65:
