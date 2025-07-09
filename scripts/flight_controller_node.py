@@ -250,20 +250,52 @@ class FlightController(object):
 
     def ctrl_c_handler(self, signal, frame):
         """ Initiate landing sequence when ctrl-c is pressed """
-        print("\nCaught ctrl-c! Initiating landing sequence...")
-        # First try to land gracefully
+        print("\nInitiating landing...")
+        # Publish LAND command - PID controller will handle the landing sequence
         self.modepub.publish('LAND')
-        # Give some time for the landing mode to be processed
-        rospy.sleep(0.5)
-        # Check if we're already in landing mode or if we need to force disarm
-        if self.curr_mode != 'LAND':
-            print("Forcing disarm...")
+        
+        # Set up landing monitoring
+        self.landing_complete = False
+        self.landing_start_time = rospy.Time.now()
+        max_landing_duration = 15.0  # Maximum time to wait for landing (seconds)
+        safe_height_threshold = 0.05  # Safe height to consider landing complete (meters)
+        check_interval = 0.5  # How often to check landing progress (seconds)
+        
+        # Monitor landing progress
+        while not self.landing_complete and not rospy.is_shutdown():
+            # Check if we've reached a safe height
+            if self.range is not None and self.range < safe_height_threshold:
+                print("Safe height reached: {:.2f}m".format(self.range))
+                self.landing_complete = True
+                break
+                
+            # Check if we've exceeded maximum landing time
+            elapsed_time = (rospy.Time.now() - self.landing_start_time).to_sec()
+            if elapsed_time > max_landing_duration:
+                print("Landing timeout ({:.1f}s)".format(elapsed_time))
+                break
+                
+            # Check if mode has changed to DISARMED (PID controller completed landing)
+            if self.curr_mode == 'DISARMED':
+                self.landing_complete = True
+                break
+                
+            # Print status every 2 seconds instead of every second
+            if int(elapsed_time / 2) > int((elapsed_time - check_interval) / 2):
+                print("Height: {:.2f}m, Time: {:.1f}s".format(self.range, elapsed_time))
+                
+            # Wait before checking again
+            rospy.sleep(check_interval)
+        
+        # Only force disarm in emergency timeout case
+        if not self.landing_complete and not self.curr_mode == 'DISARMED':
+            print("Emergency motor shutdown")
             self.board.send_raw_command(8, MultiWii.SET_RAW_RC, cmds.disarm_cmd)
             self.board.receiveDataPacket()
-            rospy.sleep(1)
             self.modepub.publish('DISARMED')
-            print("Successfully Disarmed")
-            sys.exit()
+            
+        print("Landing complete")
+        sys.exit()
 
     # Heartbeat Callbacks: These update the last time that data was received
     #                       from a node
