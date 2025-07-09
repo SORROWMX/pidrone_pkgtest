@@ -117,7 +117,7 @@ class RigidTransformNode(object):
                 self.first = False
                 print("Capturing a new first image")
                 self.first_image = image
-                self.first_points = cv2.goodFeaturesToTrack(self.first_image, maxCorners=6, qualityLevel=0.02, minDistance=12)
+                self.first_points = cv2.goodFeaturesToTrack(self.first_image, maxCorners=10, qualityLevel=0.01, minDistance=8)
                 # for point in self.first_points:
                 #     x = int(point[0,0])
                 #     y = int(point[0,1])
@@ -132,17 +132,7 @@ class RigidTransformNode(object):
                 # try to estimate the transformations from the first image
                 #print(self.first_image)
 
-                # Pre-allocate arrays and specify pyramid levels
-                if not hasattr(self, 'nextPts'):
-                    self.nextPts = np.zeros_like(self.first_points)
-                    self.status = None
-                    self.err = None
-                    # Reduce pyramid levels from default (3) to 2
-                    self.lk_params = dict(winSize=(15,15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-
-                nextPts, status, err = cv2.calcOpticalFlowPyrLK(
-                    self.first_image, image, self.first_points, self.nextPts, 
-                    **self.lk_params)
+                nextPts, status, err = cv2.calcOpticalFlowPyrLK(self.first_image, image, self.first_points, None)
 
                 transform_first, inliers = cv2.estimateAffinePartial2D(self.first_points, nextPts, False)
                 #print(transform_first)
