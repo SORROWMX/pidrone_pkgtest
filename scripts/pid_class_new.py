@@ -199,7 +199,7 @@ class PIDaxis():
         
         # Smoothly limit throttle range
         if not self.landing_mode:
-            throttle = max(1380, min(throttle, 1500))  # Narrower range для меньших колебаний
+            throttle = max(1380, min(throttle, 1500))  
         
         # Store values for next iteration
         self.previous_height = current_height
@@ -223,12 +223,10 @@ class PID:
 
                  yaw=PIDaxis(0.0, 0.0, 0.0),
 
-                 # Kv 2300 motors have midpoint 1300, Kv 2550 motors have midpoint 1250
-                 throttle=PIDaxis(1,
-                                  0, #0.5/height_factor * battery_factor,
-                                  1,
-                                  i_range=(-400, 400), control_range=(1100, 1600),
-                                  d_range=(-40, 40), midpoint=1300)
+                 # Throttle controller uses adaptive_height_step instead of standard PID
+                 throttle=PIDaxis(0, 0, 0, i_range=(-400, 400), 
+                                 control_range=(1100, 1600), d_range=(-40, 40), 
+                                 midpoint=1300)
                  ):
 
         self.trim_controller_cap_plane = 0.05
