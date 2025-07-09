@@ -194,7 +194,12 @@ class PIDController(object):
             
         self.position_control = msg.data
         if self.position_control:
-            self.desired_position = self.current_position
+            # Store current x,y position but always maintain TARGET_HEIGHT for z
+            self.desired_position = Position(
+                self.current_position.x,
+                self.current_position.y,
+                TARGET_HEIGHT
+            )
         if (self.position_control != self.last_position_control):
             print("Position Control", self.position_control)
             self.last_position_control = self.position_control
@@ -249,7 +254,6 @@ class PIDController(object):
         if self.landing_complete:
             if self.landing_disarm_time is None:
                 self.landing_disarm_time = curr_time
-                print("Landing complete, disarming in {:.1f} seconds...".format(self.landing_disarm_delay))
             
             if curr_time - self.landing_disarm_time > self.landing_disarm_delay:
                 print("Landing complete, disarming now")
