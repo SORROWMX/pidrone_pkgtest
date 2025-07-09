@@ -199,7 +199,7 @@ class PIDaxis():
         
         # Smoothly limit throttle range
         if not self.landing_mode:
-            throttle = max(1380, min(throttle, 1500))  # Narrower range для меньших колебаний
+            throttle = max(1380, min(throttle, 1500))  
         
         # Store values for next iteration
         self.previous_height = current_height
