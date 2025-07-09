@@ -32,6 +32,8 @@ class UKFStateEstimator7D(object):
     # TODO: Make a reference to the UKF math document that is being written up,
     #       once it is in a complete enough state and can be placed in a shared
     #       location.
+    # For more information on the UKF implementation, refer to the UKF documentation
+    # in the project wiki: https://github.com/h2r/pidrone_pkg/wiki/UKF-State-Estimation
     
     def __init__(self, loop_hz, ir_throttled=False, imu_throttled=False, optical_flow_throttled=False, camera_pose_throttled=False):
         # self.ready_to_filter is False until we get initial measurements in
@@ -136,9 +138,9 @@ class UKFStateEstimator7D(object):
         # TODO: Modify these sigma point parameters appropriately. Currently
         #       just guesses
         sigma_points = MerweScaledSigmaPoints(n=self.state_vector_dim,
-                                              alpha=0.1,
-                                              beta=2.0,
-                                              kappa=(3.0-self.state_vector_dim))
+                                              alpha=0.3,  # Determines spread of sigma points around mean (0.001-1)
+                                              beta=2.0,   # Optimal for Gaussian distributions
+                                              kappa=0.0)  # Secondary scaling parameter (usually 0 or 3-n)
         # Create the UKF object
         # Note that dt will get updated dynamically as sensor data comes in,
         # as will the measurement function, since measurements come in at
@@ -159,11 +161,33 @@ class UKFStateEstimator7D(object):
         # Initialize state covariance matrix P:
         # TODO: Tune these initial values appropriately. Currently these are
         #       just guesses
-        self.ukf.P = np.diag([0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.0005])
+        # Position variances [x, y, z] - in m^2
+        pos_vars = [0.05, 0.05, 0.01]  # Lower z variance due to IR sensor precision
+        # Velocity variances [vx, vy, vz] - in (m/s)^2
+        vel_vars = [0.1, 0.1, 0.05]    # Based on optical flow and z velocity estimation
+        # Yaw variance - in rad^2
+        yaw_var = 0.0002               # Based on camera pose estimation
+        
+        self.ukf.P = np.diag([pos_vars[0], pos_vars[1], pos_vars[2], 
+                              vel_vars[0], vel_vars[1], vel_vars[2], 
+                              yaw_var])
         
         # Initialize the process noise covariance matrix Q:
         # TODO: Tune appropriately. Currently just a guess
-        self.ukf.Q = np.diag([0.01, 0.01, 0.01, 1.0, 1.0, 1.0, 0.1])*0.005
+        # Process noise reflects how much we expect the state to change between steps
+        # Position process noise [x, y, z] - in m^2
+        pos_process_noise = [0.005, 0.005, 0.003]  # Lower for z which changes less rapidly
+        # Velocity process noise [vx, vy, vz] - in (m/s)^2
+        vel_process_noise = [0.5, 0.5, 0.3]        # Higher as velocities can change quickly
+        # Yaw process noise - in rad^2
+        yaw_process_noise = 0.05                   # Moderate as yaw changes slowly
+        
+        # Scale factor for process noise (can be adjusted based on loop frequency)
+        noise_scale = 0.01
+        
+        self.ukf.Q = np.diag([pos_process_noise[0], pos_process_noise[1], pos_process_noise[2],
+                              vel_process_noise[0], vel_process_noise[1], vel_process_noise[2],
+                              yaw_process_noise]) * noise_scale
         
         # Initialize the measurement covariance matrix R
         # IR slant range variance (m^2), determined experimentally in a static
@@ -380,7 +404,10 @@ class UKFStateEstimator7D(object):
         
         # TODO: Consider using roll and pitch values directly from the IMU, as
         #       the IMU implements its own filter on attitude
-        quaternion = self.get_quaternion_from_yaw(self.ukf.x[6])
+        # Get roll and pitch directly from IMU for better attitude estimation
+        r, p, _ = self.get_r_p_y()
+        # Create quaternion from roll, pitch, and estimated yaw
+        quaternion = tf.transformations.quaternion_from_euler(r, p, self.ukf.x[6])
         
         # Get the current state estimate from self.ukf.x, and fill the rest of
         # the message with NaN
@@ -401,7 +428,18 @@ class UKFStateEstimator7D(object):
         # 36-element array, in a row-major order, according to ROS msg docs
         pose_cov_mat = np.full((36,), np.nan)
         twist_cov_mat = np.full((36,), np.nan)
+        
+        # Fill in the pose covariance matrix (6x6)
+        # Format: [x, y, z, roll, pitch, yaw]
+        pose_cov_mat[0] = self.ukf.P[0, 0]  # x variance
+        pose_cov_mat[7] = self.ukf.P[1, 1]  # y variance
         pose_cov_mat[14] = self.ukf.P[2, 2] # z variance
+        pose_cov_mat[35] = self.ukf.P[6, 6] # yaw variance
+        
+        # Fill in the twist covariance matrix (6x6)
+        # Format: [vx, vy, vz, wx, wy, wz]
+        twist_cov_mat[0] = self.ukf.P[3, 3]  # x velocity variance
+        twist_cov_mat[7] = self.ukf.P[4, 4]  # y velocity variance
         twist_cov_mat[14] = self.ukf.P[5, 5] # z velocity variance
         
         # Add covariances to message
