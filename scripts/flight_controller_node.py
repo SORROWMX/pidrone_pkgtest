@@ -148,8 +148,8 @@ class FlightController(object):
         cos_pitch = np.cos(pitch)
 
         # Transform euler angles into quaternion
-        tf.transformations.quaternion_from_euler(roll, pitch, heading, self.quaternion_buffer)
-        quaternion = self.quaternion_buffer
+        quaternion = tf.transformations.quaternion_from_euler(roll, pitch, heading)
+        self.quaternion_buffer[:] = quaternion  # Copy to pre-allocated buffer
         
         # Calculate the linear accelerations
         lin_acc_x = self.board.rawIMU['ax'] * self.accRawToMss - self.accZeroX

@@ -8,7 +8,7 @@ TARGET_HEIGHT = 0.65
 # PID parameters for height control - tuned for new throttle values
 KP = 80.0   # Reduced for smoother control
 KI = 0.15   # Reduced to prevent oscillation
-KD = 40.0   # Reduced for less aggressive response
+KD = 60.0   # Reduced for less aggressive response
 
 #####################################################
 #						PID							#
@@ -168,11 +168,11 @@ class PIDaxis():
             # Above target height
             height_diff = current_height - target_height
             
-            if height_diff > 0.1: 
-                base_throttle = 1450  # Set to 1410 for descent
-                gain = 0.6
-            else: 
-                base_throttle = 1450  # Set to 1410 for descent
+            if height_diff > 0.1:
+                base_throttle = 1428
+                gain = 0.65
+            else:
+                base_throttle = 1430
                 gain = 0.7
                 
             throttle_adjustment = p_term + i_term + d_term
@@ -184,27 +184,22 @@ class PIDaxis():
             
             if height_diff > 0.3:
                 # Significantly below target - gentler response for slow takeoff
-                base_throttle = 1460  
-                gain = 0.7  
+                base_throttle = 1434
+                gain = 0.45
             elif height_diff > 0.1:
-                # Moderately below target
-                base_throttle = 1460  
+                base_throttle = 1430
                 gain = 0.6  
-            elif height_diff > 0.05:
-                # Slightly below target
-                base_throttle = 1440 
-                gain = 0.5  
             else:
-                # Very close to target
-                base_throttle = 1440    
-                gain = 0.5 
+                # Close to target
+                base_throttle = 1435   
+                gain = 0.60
                 
             throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)
         
         # Smoothly limit throttle range
         if not self.landing_mode:
-            throttle = max(1380, min(throttle, 1520))  # Narrower range
+            throttle = max(1380, min(throttle, 1500))  # Narrower range для меньших колебаний
         
         # Store values for next iteration
         self.previous_height = current_height
