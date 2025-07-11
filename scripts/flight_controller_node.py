@@ -326,29 +326,59 @@ class FlightController(object):
 
     def shouldIDisarm(self):
         """
-        Disarm the drone if the battery values are too low or if there is a
-        missing heartbeat
+        Check if the drone should disarm based on critical conditions.
+        Missing heartbeats will trigger warnings but not automatic disarming.
+        Low battery will trigger landing sequence instead of immediate disarm.
         """
         curr_time = rospy.Time.now()
         
-        # Check all heartbeats at once
+        # Check all heartbeats and report missing components
         heartbeat_timeout = rospy.Duration.from_sec(1)
-        disarm = False
         
-        if (curr_time - self.heartbeat_pid_controller > heartbeat_timeout or
-            curr_time - self.heartbeat_infrared > heartbeat_timeout or
-            curr_time - self.heartbeat_state_estimator > heartbeat_timeout):
-            disarm = True
-            
-        # Check battery voltage if battery type has been detected
+        # Check for missing components but don't disarm
+        if curr_time - self.heartbeat_pid_controller > heartbeat_timeout:
+            if not hasattr(self, 'pid_warning_time') or curr_time - self.pid_warning_time > rospy.Duration.from_sec(5):
+                print("WARNING: PID controller heartbeat missing")
+                self.pid_warning_time = curr_time
+        
+        if curr_time - self.heartbeat_state_estimator > heartbeat_timeout:
+            if not hasattr(self, 'state_warning_time') or curr_time - self.state_warning_time > rospy.Duration.from_sec(5):
+                print("WARNING: State estimator heartbeat missing")
+                self.state_warning_time = curr_time
+        
+        if curr_time - self.heartbeat_infrared > heartbeat_timeout:
+            if not hasattr(self, 'ir_warning_time') or curr_time - self.ir_warning_time > rospy.Duration.from_sec(5):
+                print("WARNING: Infrared sensor heartbeat missing")
+                self.ir_warning_time = curr_time
+        
+        # Only return true for extreme critical conditions
+        # For low battery, we'll handle it separately with landing
+        return False
+        
+    def check_battery(self):
+        """
+        Check battery level and initiate landing if battery is low
+        Returns: True if battery is low and landing should be initiated
+        """
         if self.battery_cells > 0 and self.battery_message.vbat is not None:
             critical_voltage = self.battery_cells * self.cell_voltage_critical
             if self.battery_message.vbat <= critical_voltage:
                 print("\nCRITICAL BATTERY: %.2fV below threshold %.2fV" % (self.battery_message.vbat, critical_voltage))
-                disarm = True
-            
+                return True
+        return False
 
-        return disarm
+    def wait_for_components(self):
+        """
+        Wait for all required components to come online
+        """
+        curr_time = rospy.Time.now()
+        heartbeat_timeout = rospy.Duration.from_sec(1)
+        
+        pid_online = curr_time - self.heartbeat_pid_controller <= heartbeat_timeout
+        state_online = curr_time - self.heartbeat_state_estimator <= heartbeat_timeout
+        ir_online = curr_time - self.heartbeat_infrared <= heartbeat_timeout
+        
+        return pid_online, state_online, ir_online
 
 
 def main():
@@ -364,12 +394,11 @@ def main():
     fc.heartbeat_infrared = curr_time
     fc.range = None
     fc.heartbeat_pid_controller = curr_time
-    fc.heartbeat_flight_controller = curr_time
     fc.heartbeat_state_estimator = curr_time
 
     # Publishers
     ###########
-    imupub = rospy.Publisher('/pidrone/imu', Imu, queue_size=1, tcp_nodelay=False)
+    imupub = rospy.Publisher('/pidrone/imu', Imu, queue_size=1, tcp_nodelay=True)
     batpub = rospy.Publisher('/pidrone/battery', Battery, queue_size=1, tcp_nodelay=False)
     fc.modepub = rospy.Publisher('/pidrone/mode', Mode, queue_size=1, tcp_nodelay=False)
     print('Publishing:')
@@ -386,19 +415,51 @@ def main():
     rospy.Subscriber("/pidrone/heartbeat/pid_controller", Empty, fc.heartbeat_pid_controller_callback)
     rospy.Subscriber("/pidrone/state", State, fc.heartbeat_state_estimator_callback)
 
-
     signal.signal(signal.SIGINT, fc.ctrl_c_handler)
+    
     # set the loop rate (Hz)
-    # Reduce loop rate to 40Hz to save CPU
-    r = rospy.Rate(40)
+    r = rospy.Rate(60)
+    
+    # Wait for all components to come online before starting
+    print("Waiting for all components to come online...")
+    while not rospy.is_shutdown():
+        pid_online, state_online, ir_online = fc.wait_for_components()
+        
+        if pid_online and state_online and ir_online:
+            print("All components are online. Starting flight controller loop.")
+            break
+        
+        # Print status every 3 seconds
+        if not hasattr(fc, 'last_status_time') or rospy.Time.now() - fc.last_status_time > rospy.Duration.from_sec(3):
+            fc.last_status_time = rospy.Time.now()
+            print("Waiting for: " + 
+                  ("PID controller " if not pid_online else "") +
+                  ("State estimator " if not state_online else "") +
+                  ("IR sensor " if not ir_online else ""))
+        
+        # Still publish IMU and battery data while waiting
+        fc.update_battery_message()
+        fc.update_imu_message()
+        imupub.publish(fc.imu_message)
+        batpub.publish(fc.battery_message)
+        
+        r.sleep()
+    
     try:
         while not rospy.is_shutdown():
-            # if the current mode is anything other than disarmed
-            # preform as safety check
-                # Break the loop if a safety check has failed
+            # Check if we should disarm due to extreme critical conditions
             if fc.shouldIDisarm():
-                print("mode", fc.curr_mode)
+                print("Critical condition detected. Disarming.")
+                fc.curr_mode = 'DISARMED'
+                fc.command = cmds.disarm_cmd
+                fc.send_rc_cmd()
+                fc.modepub.publish(fc.curr_mode)
                 break
+                
+            # Check battery and initiate landing if needed
+            if fc.check_battery() and fc.curr_mode == 'FLYING':
+                print("Low battery detected. Initiating landing sequence.")
+                fc.modepub.publish('LAND')
                 
             # update and publish flight controller readings
             fc.update_battery_message()
