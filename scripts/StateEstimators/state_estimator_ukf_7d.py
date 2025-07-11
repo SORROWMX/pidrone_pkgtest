@@ -565,9 +565,8 @@ class UKFStateEstimator7D(object):
         """
         print('Waiting for IMU and range data...')
         wait_start_time = rospy.get_time()
-        wait_timeout = 10.0  # 10 секунд таймаут
+        wait_timeout = 10.0  
         
-        # Ждем, пока не получим данные от IMU и датчика расстояния
         while not self.ready_to_filter and not rospy.is_shutdown():
             if rospy.get_time() - wait_start_time > wait_timeout:
                 print("WARNING: Timeout waiting for sensor data!")
@@ -581,7 +580,6 @@ class UKFStateEstimator7D(object):
         else:
             print('Starting without all sensor data. This may cause issues.')
         
-        # Обработка возможных проблем с соединением
         try:
             rate = rospy.Rate(self.loop_hz)
             while not rospy.is_shutdown():
