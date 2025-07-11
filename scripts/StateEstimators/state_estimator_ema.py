@@ -6,6 +6,7 @@ import os
 import rospy
 import signal
 import numpy as np
+import time
 from pidrone_pkg.msg import State
 from sensor_msgs.msg import Range, Imu
 from geometry_msgs.msg import PoseStamped, TwistStamped
@@ -50,6 +51,12 @@ class EMAStateEstimator(object):
         self.mw_angle_comp_y = 0
         self.mw_angle_coeff = 0.2
 
+        # Range data monitoring
+        self.last_range_time = None
+        self.range_timeout = 1.0  # seconds
+        self.range_healthy = False
+        self.range_warning_printed = False
+
 
     # ROS Subscriber Callback Methods:
     ##################################
@@ -89,6 +96,15 @@ class EMAStateEstimator(object):
         self.filter_range(data.range)
         # set received range data to True
         self.received_range_data = True
+        
+        # Update range data health monitoring
+        current_time = rospy.get_time()
+        self.last_range_time = current_time
+        if not self.range_healthy:
+            self.range_healthy = True
+            if self.range_warning_printed:
+                print("Range sensor data resumed")
+                self.range_warning_printed = False
 
     # EMA Filtering Methods:
     ########################
@@ -149,6 +165,21 @@ class EMAStateEstimator(object):
         # update the current z position
         self.state.pose_with_covariance.pose.position.z = smoothed_altitude
 
+    def check_range_sensor_health(self):
+        """Check if the range sensor is providing updates within the expected timeframe"""
+        if self.last_range_time is None:
+            return False
+            
+        current_time = rospy.get_time()
+        time_since_last_range = current_time - self.last_range_time
+        
+        if time_since_last_range > self.range_timeout:
+            if self.range_healthy or not self.range_warning_printed:
+                print("WARNING: Range sensor data timeout. Last update was {:.2f} seconds ago".format(time_since_last_range))
+                self.range_warning_printed = True
+                self.range_healthy = False
+            return False
+        return True
 
     # Helper Methods:
     #################
@@ -214,6 +245,8 @@ def main():
     # set the publishing rate (Hz)
     rate = rospy.Rate(60)
     while not rospy.is_shutdown():
+        # Check range sensor health
+        state_estimator.check_range_sensor_health()
         statepub.publish(state_estimator.state)
         rate.sleep()
 

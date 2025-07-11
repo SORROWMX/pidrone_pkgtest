@@ -6,6 +6,7 @@ import tf
 from sensor_msgs.msg import Imu, Range
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from pidrone_pkg.msg import State
+from std_msgs.msg import Empty
 
 # UKF imports
 # The matplotlib imports and the matplotlib.use('Pdf') line make it so that the
@@ -21,6 +22,7 @@ from filterpy.kalman import MerweScaledSigmaPoints
 import numpy as np
 import argparse
 import os
+import time
 
 
 class UKFStateEstimator7D(object):
@@ -68,6 +70,13 @@ class UKFStateEstimator7D(object):
             
         self.in_callback = False
 
+        # Range data monitoring
+        self.last_range_time = None
+        self.range_timeout = 1.0  # seconds
+        self.range_healthy = False
+        self.range_warning_printed = False
+        self.reset_pub = None
+
         self.initialize_ukf()
         
         # The last time that we received an input and formed a prediction with
@@ -96,6 +105,9 @@ class UKFStateEstimator7D(object):
         # Create the publisher to publish state estimates
         self.state_pub = rospy.Publisher('/pidrone/state/ukf_7d', State, queue_size=1,
                                          tcp_nodelay=False)
+        
+        # Publisher for resetting the TOF sensor if needed
+        self.reset_pub = rospy.Publisher('/pidrone/reset_transform', Empty, queue_size=1)
         
         # Subscribe to topics to which the drone publishes in order to get raw
         # data from sensors, which we can then filter
@@ -295,6 +307,15 @@ class UKFStateEstimator7D(object):
         # the range reading by the cosines of the roll and pitch
         tof_height = data.range*np.cos(r)*np.cos(p)
 
+        # Update range data health monitoring
+        current_time = rospy.get_time()
+        self.last_range_time = current_time
+        if not self.range_healthy:
+            self.range_healthy = True
+            if self.range_warning_printed:
+                print("Range sensor data resumed")
+                self.range_warning_printed = False
+
         if self.ready_to_filter:
             self.update_input_time(data)
 
@@ -315,6 +336,27 @@ class UKFStateEstimator7D(object):
             self.got_ir = True
             self.check_if_ready_to_filter()
         self.in_callback = False
+        
+    def check_range_sensor_health(self):
+        """Check if the range sensor is providing updates within the expected timeframe"""
+        if self.last_range_time is None:
+            return False
+            
+        current_time = rospy.get_time()
+        time_since_last_range = current_time - self.last_range_time
+        
+        if time_since_last_range > self.range_timeout:
+            if self.range_healthy or not self.range_warning_printed:
+                print("WARNING: Range sensor data timeout. Last update was {:.2f} seconds ago".format(time_since_last_range))
+                self.range_warning_printed = True
+                self.range_healthy = False
+                
+                # Try to recover by sending a reset signal
+                if self.reset_pub is not None:
+                    print("Attempting to reset range sensor...")
+                    self.reset_pub.publish(Empty())
+            return False
+        return True
         
     def optical_flow_data_callback(self, data):
         """
@@ -533,6 +575,9 @@ class UKFStateEstimator7D(object):
                 # IR range reading
                 self.ukf.update(self.last_measurement_vector)
                 self.publish_current_state()
+                
+                # Check range sensor health
+                self.check_range_sensor_health()
             rate.sleep()
         
         

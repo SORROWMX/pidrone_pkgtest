@@ -206,7 +206,7 @@ class PIDaxis():
         self.previous_height_error = smoothed_error
         
         if not self.landing_mode or int(rospy.get_time() * 2) != int((rospy.get_time() - 0.1) * 2):
-            print("Throttle: %d, Error: %.2f, P: %.2f, I: %.2f, D: %.2f" % (throttle, error, p_term, i_term, d_term))
+            print("Throttle: %d" % (throttle))
         
         return throttle
 
