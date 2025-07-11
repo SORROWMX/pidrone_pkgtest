@@ -104,7 +104,7 @@ class UKFStateEstimator7D(object):
         
         # Create the publisher to publish state estimates
         self.state_pub = rospy.Publisher('/pidrone/state/ukf_7d', State, queue_size=1,
-                                         tcp_nodelay=False)
+                                         tcp_nodelay=True)
         
         # Publisher for resetting the TOF sensor if needed
         self.reset_pub = rospy.Publisher('/pidrone/reset_transform', Empty, queue_size=1)
@@ -563,22 +563,48 @@ class UKFStateEstimator7D(object):
         Begin the UKF's loop of predicting and updating. Publish a state
         estimate at the end of each loop.
         """
-        rate = rospy.Rate(self.loop_hz)
-        while not rospy.is_shutdown():
-            if self.ready_to_filter:
-                self.print_notice_if_first()
-                self.ukf_predict()
-                            
-                # Now that a prediction has been formed to bring the current
-                # prior state estimate to the same point in time as the
-                # measurement, perform a measurement update with the most recent
-                # IR range reading
-                self.ukf.update(self.last_measurement_vector)
-                self.publish_current_state()
-                
-                # Check range sensor health
-                self.check_range_sensor_health()
-            rate.sleep()
+        print('Waiting for IMU and range data...')
+        wait_start_time = rospy.get_time()
+        wait_timeout = 10.0  # 10 секунд таймаут
+        
+        # Ждем, пока не получим данные от IMU и датчика расстояния
+        while not self.ready_to_filter and not rospy.is_shutdown():
+            if rospy.get_time() - wait_start_time > wait_timeout:
+                print("WARNING: Timeout waiting for sensor data!")
+                print("IMU data received: {}".format(self.got_imu))
+                print("Range data received: {}".format(self.got_ir))
+                break
+            rospy.sleep(0.1)
+        
+        if self.ready_to_filter:
+            print('Publishing State')
+        else:
+            print('Starting without all sensor data. This may cause issues.')
+        
+        # Обработка возможных проблем с соединением
+        try:
+            rate = rospy.Rate(self.loop_hz)
+            while not rospy.is_shutdown():
+                if self.ready_to_filter:
+                    self.print_notice_if_first()
+                    self.ukf_predict()
+                    
+                    # Now that a prediction has been formed to bring the current
+                    # prior state estimate to the same point in time as the
+                    # measurement, perform a measurement update with the most recent
+                    # IR range reading
+                    self.ukf.update(self.last_measurement_vector)
+                    self.publish_current_state()
+                    
+                    # Check range sensor health
+                    self.check_range_sensor_health()
+                rate.sleep()
+        except rospy.exceptions.ROSInterruptException:
+            print("ROS node interrupted")
+        except rospy.exceptions.ROSException as e:
+            print("ROS error: {}".format(e))
+        except Exception as e:
+            print("Unexpected error in UKF loop: {}".format(e))
         
         
 def check_positive_float_duration(val):
