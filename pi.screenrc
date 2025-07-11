@@ -57,9 +57,9 @@ stuff "rosrun web_video_server web_video_server\n"
 
 # 3. Start hardware interface nodes
 screen -t "TOF"
-stuff "echo 'Waiting for roscore and rosbridge...'\n"
-stuff "until rostopic list > /dev/null 2>&1 && rostopic list | grep -q '/rosbridge_websocket'; do sleep 1; done\n"
-stuff "echo 'ROS core and rosbridge detected, starting TOF sensor'\n"
+stuff "echo 'Waiting for roscore...'\n"
+stuff "until rostopic list > /dev/null 2>&1; do sleep 1; done\n"
+stuff "echo 'ROS core detected, starting TOF sensor'\n"
 stuff "source ~/catkin_ws/install/setup.bash && roslaunch launch/tof.launch\n"
 
 screen -t "Vision"
@@ -87,10 +87,7 @@ stuff "python rigid_transform_node.py\n"
 # 5. Start state estimator
 screen -t "SE"
 stuff "cd $(rospack find pidrone_pkg)/scripts/\n"
-stuff "echo 'Waiting for sensor topics (IR, IMU, camera)...'\n"
-stuff "until rostopic list | grep -q '/pidrone/range' && rostopic list | grep -q '/pidrone/imu' && rostopic list | grep -q '/pidrone/picamera/twist'; do sleep 1; done\n"
-stuff "echo 'Sensor topics detected, starting state estimator'\n"
-stuff "python state_estimator.py -p ukf7d\n"
+stuff "python state_estimator.py -p ema\n"
 
 # 6. Start PID controller
 screen -t "PID"

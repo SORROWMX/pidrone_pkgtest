@@ -349,13 +349,10 @@ class FlightController(object):
         if self.battery_cells > 0 and self.battery_message.vbat is not None:
             critical_voltage = self.battery_cells * self.cell_voltage_critical
             if self.battery_message.vbat <= critical_voltage:
-                print(f"\nCRITICAL BATTERY: {self.battery_message.vbat:.2f}V below threshold {critical_voltage:.2f}V")
+                print("\nCRITICAL BATTERY: %.2fV below threshold %.2fV" % (self.battery_message.vbat, critical_voltage))
                 disarm = True
             
-        # Only print warning if actually too high
-        if self.range > 0.65:
-            print(('\nWARNING: Drone is flying too high: {:.2f}m').format(self.range))
-            
+
         return disarm
 
 
