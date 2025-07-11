@@ -304,14 +304,9 @@ class FlightController(object):
             # Wait before checking again
             rospy.sleep(check_interval)
         
-        # Only force disarm in emergency timeout case
-        if not self.landing_complete and not self.curr_mode == 'DISARMED':
-            print("Emergency motor shutdown")
-            self.board.send_raw_command(8, MultiWii.SET_RAW_RC, cmds.disarm_cmd)
-            self.board.receiveDataPacket()
-            self.modepub.publish('DISARMED')
-            
-        print("Landing complete")
+        # Only print landing complete message, don't force disarm
+        # Let the PID controller handle the landing and disarming
+        print("Landing process completed")
         sys.exit()
 
     # Heartbeat Callbacks: These update the last time that data was received
