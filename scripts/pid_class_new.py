@@ -2,16 +2,15 @@
 
 import rospy
 
+# PID parameters moved to PID class __init__
 # Target height to maintain in meters
-TARGET_HEIGHT = 0.65
+# TARGET_HEIGHT = 0.65
+# KP = 80.0
+# KI = 0.15
+# KD = 60.0
+# HOVER_THROTTLE = 1300  
+# DEADBAND = 50          
 
-# PID parameters for height control - tuned for new throttle values
-KP = 80.0   # Reduced for smoother control
-KI = 0.15   # Reduced to prevent oscillation
-KD = 60.0   # Reduced for less aggressive response
-
-HOVER_THROTTLE = 1300  
-DEADBAND = 50          
 #####################################################
 #						PID							#
 #####################################################
@@ -38,8 +37,8 @@ class PIDaxis():
         self.is_throttle_controller = False
         # Landing mode flag
         self.landing_mode = False
-        self.hover_throttle = HOVER_THROTTLE
-        self.deadband = DEADBAND
+        self.hover_throttle = 1300  # Default value, will be overridden in PID class
+        self.deadband = 50          # Default value, will be overridden in PID class
         self.target_vel_z = 0.0       
         self.current_vel_z = 0.0     
         
@@ -69,8 +68,8 @@ class PIDaxis():
                 current_height = -err/100.0  # Convert from cm to m
                 desired_height = 0  
             else:
-                current_height = TARGET_HEIGHT - err/100.0  # Convert from cm to m
-                desired_height = TARGET_HEIGHT
+                current_height = self.target_height - err/100.0  # Convert from cm to m
+                desired_height = self.target_height
                 
             return self.barometer_height_step(desired_height, current_height, time_elapsed)
             
@@ -189,6 +188,13 @@ class PIDaxis():
 class PID:
 
     def __init__(self,
+                 # Default PID parameters that were previously at the top of the file
+                 target_height=0.65,
+                 kp=0.8,      # Changed from 80.0/100
+                 ki=0.0015,   # Changed from 0.15/100
+                 kd=0.6,      # Changed from 60.0/100
+                 hover_throttle=1300,
+                 deadband=50,
 
                  roll=PIDaxis(2.0, 1.0, 0.0, control_range=(1400, 1600), midpoint=1500, i_range=(-100, 100)),
                  roll_low=PIDaxis(0.0, 0.5, 0.0, control_range=(1400, 1600), midpoint=1500, i_range=(-150, 150)),
@@ -199,11 +205,12 @@ class PID:
                  yaw=PIDaxis(0.0, 0.0, 0.0),
 
                  # Throttle controller uses barometer_height_step for altitude control
-                 throttle=PIDaxis(KP/100.0, KI/100.0, KD/100.0, i_range=(-400, 400), 
-                                 control_range=(1100, 1500), d_range=(-40, 40), 
-                                 midpoint=1300)
+                 throttle=None
                  ):
 
+        # Store the target height as instance variable
+        self.target_height = target_height
+        
         self.trim_controller_cap_plane = 0.05
         self.trim_controller_thresh_plane = 0.0001
 
@@ -215,9 +222,18 @@ class PID:
 
         self.yaw = yaw
 
-
-
-        self.throttle = throttle
+        # Create throttle controller if not provided
+        if throttle is None:
+            self.throttle = PIDaxis(kp, ki, kd, i_range=(-400, 400), 
+                                  control_range=(1100, 1500), d_range=(-40, 40), 
+                                  midpoint=hover_throttle)
+        else:
+            self.throttle = throttle
+            
+        # Set hover throttle and deadband values
+        self.throttle.hover_throttle = hover_throttle
+        self.throttle.deadband = deadband
+            
         # Mark throttle controller for special handling
         self.throttle.is_throttle_controller = True
 
