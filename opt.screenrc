@@ -77,20 +77,13 @@ stuff "until rostopic list | grep -q '/pidrone/range'; do sleep 1; done\n"
 stuff "echo 'TOF sensor detected, starting camera node'\n"
 stuff "roslaunch --wait pidrone_pkg raspicam_node.launch\n"
 
-# 5. Start vision processing nodes
-screen -t "Optical Flow"
+# 5. Start vision processing node (combined flow and phase)
+screen -t "Vision Flow and Phase"
 stuff "cd $(rospack find pidrone_pkg)/scripts\n"
 stuff "echo 'Waiting for camera topics...'\n"
 stuff "until rostopic list | grep -q '/raspicam_node/image'; do sleep 1; done\n"
-stuff "echo 'Camera topics detected, starting optical flow node'\n"
-stuff "python optical_flow_node.py\n"
-
-screen -t "Rigid Transform"
-stuff "cd $(rospack find pidrone_pkg)/scripts\n"
-stuff "echo 'Waiting for camera and IR topics...'\n"
-stuff "until rostopic list | grep -q '/raspicam_node/image' && rostopic list | grep -q '/pidrone/range'; do sleep 1; done\n"
-stuff "echo 'Required topics detected, starting rigid transform node'\n"
-stuff "python rigid_transform_node.py\n"
+stuff "echo 'Camera topics detected, starting vision flow and phase'\n"
+stuff "python vision_flow_and_phase.py\n"
 
 # 6. Start state estimator
 screen -t "SE"
