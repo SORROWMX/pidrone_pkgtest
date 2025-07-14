@@ -29,8 +29,14 @@ def main():
         # Get current hover_throttle value from INAV via MSP_NAV_POSHOLD
         hover_throttle_inav = board.get_hover_throttle()
         
+        # Get alt_hold_deadband value from INAV via MSP_RC_DEADBAND
+        alt_hold_deadband = board.get_alt_hold_deadband()
+        
         # Try to get additional information about the NAV_POSHOLD settings
         board.getData(MultiWii.MSP_NAV_POSHOLD)
+        
+        # Get full RC deadband data
+        board.getData(MultiWii.MSP_RC_DEADBAND)
         
     except SerialException as e:
         pass

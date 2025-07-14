@@ -69,6 +69,7 @@ class MultiWii:
     
     # INAV specific MSP commands
     MSP_NAV_POSHOLD = 12
+    MSP_RC_DEADBAND = 125
   
 
     SEND_ZERO_STRUCT1 = struct.Struct('<2B%dh' % 0)
@@ -92,6 +93,7 @@ class MultiWii:
         self.navPoshold = {'user_control_mode':0, 'max_auto_speed':0, 'max_auto_climb_rate':0, 
                            'max_manual_speed':0, 'max_manual_climb_rate':0, 'max_bank_angle':0, 
                            'althold_throttle_type':0, 'hover_throttle':0, 'elapsed':0, 'timestamp':0}
+        self.rcDeadband = {'deadband':0, 'yaw_deadband':0, 'alt_hold_deadband':0, 'deadband3d_throttle':0, 'elapsed':0, 'timestamp':0}
 
         self.pid = {'roll':None, 'pitch': None, 'yaw':None, 'alt':None ,'pos':None, 'posr':None, 'navr':None, 'level':None, 'mag':None, 'vel':None}
 
@@ -166,39 +168,6 @@ class MultiWii:
             
             self.ser.write(packet)
             self.logger.debug("Raw command sent", packet)
-
-
-
-    """Function to arm / disarm """
-    """
-    Modification required on Multiwii firmware to Protocol.cpp in evaluateCommand:
-
-    case MSP_SET_RAW_RC:
-      s_struct_w((uint8_t*)&rcSerial,16);
-      rcSerialCount = 50; // 1s transition
-      s_struct((uint8_t*)&att,6);
-      break;
-
-    """
-    # def arm(self):
-    #     timer = 0
-    #     start = time.time()
-    #     while timer < 0.5:
-    #         data = [1500, 1500, 2000, 1000, 1500, 1500, 1500, 1500]
-    #         self.sendCMD(16,MultiWii.SET_RAW_RC,data)
-    #         time.sleep(0.05)
-    #         timer = timer + (time.time() - start)
-    #         start =  time.time()
-
-    # def disarm(self):
-    #     timer = 0
-    #     start = time.time()
-    #     while timer < 0.5:
-    #         data = [1500,1500,1000,990, 1500, 1500, 1500, 1500]
-    #         self.sendCMD(16,MultiWii.SET_RAW_RC,data)
-    #         time.sleep(0.05)
-    #         timer = timer + (time.time() - start)
-    #         start =  time.time()
 
     """Function to receive a data packet from the board"""
     def getData(self, cmd):
@@ -299,6 +268,22 @@ class MultiWii:
                         except struct.error:
                             print("Failed to get hover_throttle")
                 return self.navPoshold
+            elif code == MultiWii.MSP_RC_DEADBAND:
+                # Process MSP_RC_DEADBAND data
+                try:
+                    # Format: uint8_t deadband, uint8_t yaw_deadband, uint8_t alt_hold_deadband, uint16_t deadband3d_throttle
+                    temp = struct.unpack('<BBBH', data)
+                    self.rcDeadband['cmd'] = code
+                    self.rcDeadband['deadband'] = temp[0]
+                    self.rcDeadband['yaw_deadband'] = temp[1]
+                    self.rcDeadband['alt_hold_deadband'] = temp[2]
+                    self.rcDeadband['deadband3d_throttle'] = temp[3]
+                    self.rcDeadband['elapsed'] = elapsed
+                    self.rcDeadband['timestamp'] = readTime
+                except struct.error as e:
+                    print("Error parsing MSP_RC_DEADBAND data: %s" % e)
+                    print("Data length: %d, data: %s" % (datalength, data))
+                return self.rcDeadband
             elif code == MultiWii.BOXNAMES:
                 print("datalength", datalength)
                 assert datalength % 2 == 0
@@ -461,5 +446,15 @@ class MultiWii:
         
         if result and 'hover_throttle' in result:
             return result['hover_throttle']
+        else:
+            return None
+            
+    def get_alt_hold_deadband(self):
+        # Send MSP_RC_DEADBAND command
+        self.send_raw_command(0, MultiWii.MSP_RC_DEADBAND, [])
+        result = self.receiveDataPacket()
+        
+        if result and 'alt_hold_deadband' in result:
+            return result['alt_hold_deadband']
         else:
             return None
