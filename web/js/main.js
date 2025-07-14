@@ -2032,10 +2032,6 @@ function setupStateSubscription() {
         document.getElementById('drone_y').textContent = message.pose_with_covariance.pose.position.y.toFixed(2);
         document.getElementById('drone_z').textContent = message.pose_with_covariance.pose.position.z.toFixed(2);
         
-        // Обновляем значения высоты в индикаторах
-        document.getElementById('rangeAltitudeValue').textContent = message.pose_with_covariance.pose.position.z.toFixed(2);
-        document.getElementById('fusedAltitudeValue').textContent = message.pose_with_covariance.pose.position.z.toFixed(2);
-        
         // Обновление скорости
         document.getElementById('drone_vx').textContent = message.twist_with_covariance.twist.linear.x.toFixed(2);
         document.getElementById('drone_vy').textContent = message.twist_with_covariance.twist.linear.y.toFixed(2);
@@ -2048,20 +2044,6 @@ function setupStateSubscription() {
         
         // Обновление прогресс-баров
         updateProgressBars(message);
-    });
-    
-    // Подписка на данные барометра
-    var baroSub = new ROSLIB.Topic({
-        ros: ros,
-        name: '/pidrone/altitude',
-        messageType: 'std_msgs/Float32',
-        queue_length: 1,
-        throttle_rate: 100
-    });
-    
-    baroSub.subscribe(function(message) {
-        // Обновляем значение высоты барометра
-        document.getElementById('baroAltitudeValue').textContent = message.data.toFixed(2);
     });
 }
 

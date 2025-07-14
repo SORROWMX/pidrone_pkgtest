@@ -453,3 +453,13 @@ class MultiWii:
 
     def eepromWrite(self):
         self.send_raw_command(0, MultiWii.EEPROM_WRITE, [])
+
+    def get_hover_throttle(self):
+        # Send MSP_NAV_POSHOLD command
+        self.send_raw_command(0, MultiWii.MSP_NAV_POSHOLD, [])
+        result = self.receiveDataPacket()
+        
+        if result and 'hover_throttle' in result:
+            return result['hover_throttle']
+        else:
+            return None
