@@ -43,6 +43,11 @@ var velocityChartPaused = false;
 var showingUkfAnalysis = false;
 var spanningFullWindow = false;
 
+// Добавляем переменные для отслеживания последнего режима и дебаунсинга
+var lastPositionMode = null;
+var positionModeDebounceTimer = null;
+var notificationDebounceTime = 500; // ms
+
 function closeSession(){
   console.log("Closing connections.");
   if (ros) {
@@ -288,27 +293,76 @@ function connect() {
         throttle_rate : 80
     });
 
+    // Barometer altitude data
+    barosub = new ROSLIB.Topic({
+        ros : ros,
+        name : '/pidrone/altitude',
+        messageType : 'std_msgs/Float32',
+        queue_length : 2,
+        throttle_rate : 80
+    });
+
     /*
      * ROS Subscriber Callbacks
      */
 
      positionSub.subscribe(function(message) {
         var position = message.data;
-        var text = "";
-        if (position) {
-            text = "Position Mode";
-            // Обновляем уведомление для XY Chart при переключении в режим позиционирования
-            $('#xy_chart_info').removeClass('alert-warning').addClass('alert-info')
-                .html('<i class="fas fa-info-circle"></i> Данные о позиции активны. Карта обновляется.');
-        } else {
-            text = "Velocity Mode";
-            // Обновляем уведомление для XY Chart при переключении в режим скорости
-            $('#xy_chart_info').removeClass('alert-info').addClass('alert-warning')
-                .html('<i class="fas fa-exclamation-triangle"></i> Внимание: Данные о позиции недоступны в режиме скорости.');
+        
+        // Проверяем, изменился ли режим с момента последнего обновления
+        if (lastPositionMode === position) {
+            return; // Пропускаем обновление, если режим не изменился
         }
-        element = document.getElementById("position_state");
-        element.textContent = text;
-     });
+        
+        // Сбрасываем предыдущий таймер дебаунса, если он существует
+        if (positionModeDebounceTimer) {
+            clearTimeout(positionModeDebounceTimer);
+        }
+        
+        // Устанавливаем таймер дебаунса
+        positionModeDebounceTimer = setTimeout(function() {
+            // Обновляем отслеживание последнего режима
+            lastPositionMode = position;
+            
+            var text = "";
+            if (position) {
+                text = '<div class="alert alert-position"><span class="mode-indicator mode-position"></span><strong>РЕЖИМ ПОЗИЦИОНИРОВАНИЯ</strong> <i class="fas fa-map-marker-alt ml-2"></i></div>';
+                // Обновляем уведомление для XY Chart при переключении в режим позиционирования
+                $('#xy_chart_info').removeClass('alert-warning').addClass('alert-info')
+                    .html('<i class="fas fa-info-circle"></i> Данные о позиции активны. Карта обновляется.');
+                
+                // Обновляем кнопки
+                $('#velocityBtn').removeClass('active btn-velocity').addClass('btn-secondary');
+                $('#positionBtn').removeClass('btn-secondary').addClass('active btn-position');
+                
+                // Обновляем стили инпутов
+                $('.control-input').removeClass('velocity').addClass('position');
+                
+                // Показываем уведомление
+                showNotification('Включен режим позиционирования', 'success');
+            } else {
+                text = '<div class="alert alert-velocity"><span class="mode-indicator mode-velocity"></span><strong>РЕЖИМ УПРАВЛЕНИЯ СКОРОСТЬЮ</strong> <i class="fas fa-tachometer-alt ml-2"></i></div>';
+                // Обновляем уведомление для XY Chart при переключении в режим скорости
+                $('#xy_chart_info').removeClass('alert-info').addClass('alert-warning')
+                    .html('<i class="fas fa-exclamation-triangle"></i> Внимание: Данные о позиции недоступны в режиме скорости.');
+                
+                // Обновляем кнопки
+                $('#positionBtn').removeClass('active btn-position').addClass('btn-secondary');
+                $('#velocityBtn').removeClass('btn-secondary').addClass('active btn-velocity');
+                
+                // Обновляем стили инпутов
+                $('.control-input').removeClass('position').addClass('velocity');
+                
+                // Показываем уведомление
+                showNotification('Включен режим управления скоростью', 'info');
+            }
+            element = document.getElementById("position_state");
+            element.innerHTML = text;
+            
+            // Добавляем анимацию для привлечения внимания
+            $('#position_state').fadeOut(100).fadeIn(100).fadeOut(100).fadeIn(100);
+        }, notificationDebounceTime);
+    });
 
     batterysub.subscribe(function(message) {
       //printProperties(message);
@@ -793,6 +847,40 @@ function connect() {
       }
     });
 
+    barosub.subscribe(function(message) {
+        currTime = new Date().getTime() / 1000;
+        if (!gotFirstHeight) {
+            gotFirstHeight = true;
+            startTime = currTime;
+        }
+        tVal = currTime - startTime;
+        // Have the plot scroll in time, showing a window of windowSize seconds
+        if (tVal > windowSize) {
+            spanningFullWindow = true;
+            heightChartMinTime = tVal - windowSize;
+            heightChartMaxTime = tVal;
+            // Remove first element of array while difference compared to current
+            // time is greater than the windowSize
+            while (baroData.length > 0 &&
+                   (tVal - baroData[0].x > windowSize)) {
+                baroData.splice(0, 1);
+            }
+        }
+        // Add new barometer reading to end of the data array
+        // x-y pair
+        var xyPair = {
+            x: tVal,
+            y: message.data
+        }
+        baroData.push(xyPair)
+        if (!heightChartPaused && !showingUkfAnalysis) {
+            heightChart.options.scales.xAxes[0].ticks.min = heightChartMinTime;
+            heightChart.options.scales.xAxes[0].ticks.max = heightChartMaxTime;
+            heightChart.data.datasets[6].data = baroData.slice();
+            heightChart.update();
+        }
+    });
+
     imageStream();
   }
 
@@ -1189,6 +1277,18 @@ var minusSigmaDataset = {
 }
 var minusSigmaData = Array(0);
 
+var baroDataset = {
+  label: 'Данные барометра',
+  data: Array(0), // initialize array of length 0
+  borderWidth: 2,
+  pointRadius: 0,
+  fill: false,
+  borderColor: 'rgba(75, 192, 192, 1)',
+  backgroundColor: 'rgba(75, 192, 192, 0.1)',
+  lineTension: 0, // remove smoothing
+  itemID: 6
+};
+var baroData = Array(0);
 
 var ctx;
 var xyctx;
@@ -1204,7 +1304,8 @@ function loadHeightChartStandardView() {
                 ukfPlusSigmaDataset,
                 ukfMinusSigmaDataset,
                 emaDataset,
-                stateGroundTruthDataset
+                stateGroundTruthDataset,
+                baroDataset
             ]
         },
         options: {
@@ -1561,9 +1662,9 @@ $(document).ready(function() {
             scales: {
                 yAxes: [{
                     ticks: {
-                        min: -1,
-                        max: 1,
-                        stepSize: 0.2, // Увеличиваем stepSize с 0.1 до 0.2
+                        min: -2,
+                        max: 2,
+                        stepSize: 0.5, // Уменьшаем шаг сетки для более детального отображения
                         fontColor: '#edf1f7',
                         padding: 10
                     },
@@ -1583,10 +1684,9 @@ $(document).ready(function() {
                 xAxes: [{
                     type: 'linear',
                     ticks: {
-                        min: -400.0/250.0,
-                        // max: 1,
-                        max: 400.0/250.0,
-                        stepSize: 0.2, // Увеличиваем stepSize с 0.1 до 0.2
+                        min: -2,
+                        max: 2,
+                        stepSize: 0.5, // Уменьшаем шаг сетки для более детального отображения
                         display: true,
                         fontColor: '#edf1f7',
                         padding: 10
@@ -1730,37 +1830,59 @@ function publishPositionMode() {
     updateControlModeUI(true);
 }
 
-// Функция для обновления UI при переключении режима
+// Обновляем функцию updateControlModeUI для предотвращения множественных переключений
 function updateControlModeUI(isPositionMode) {
-    if (isPositionMode) {
-        // Обновляем кнопки
-        $('#velocityBtn').removeClass('active btn-velocity').addClass('btn-secondary');
-        $('#positionBtn').removeClass('btn-secondary').addClass('active btn-position');
-        
-        // Обновляем индикатор режима
-        $('#position_state').html('<div class="alert alert-position"><span class="mode-indicator mode-position"></span>Режим позиционирования</div>');
-        
-        // Обновляем стили инпутов
-        $('.control-input').removeClass('velocity').addClass('position');
-        
-        // Обновляем уведомление для XY Chart
-        $('#xy_chart_info').removeClass('alert-warning').addClass('alert-info')
-            .html('<i class="fas fa-info-circle"></i> Данные о позиции активны. Карта обновляется.');
-    } else {
-        // Обновляем кнопки
-        $('#positionBtn').removeClass('active btn-position').addClass('btn-secondary');
-        $('#velocityBtn').removeClass('btn-secondary').addClass('active btn-velocity');
-        
-        // Обновляем индикатор режима
-        $('#position_state').html('<div class="alert alert-velocity"><span class="mode-indicator mode-velocity"></span>Режим управления скоростью</div>');
-        
-        // Обновляем стили инпутов
-        $('.control-input').removeClass('position').addClass('velocity');
-        
-        // Обновляем уведомление для XY Chart
-        $('#xy_chart_info').removeClass('alert-info').addClass('alert-warning')
-            .html('<i class="fas fa-exclamation-triangle"></i> Внимание: Данные о позиции недоступны в режиме скорости.');
+    // Проверяем, изменился ли режим с момента последнего обновления
+    if (lastPositionMode === isPositionMode) {
+        return; // Пропускаем обновление, если режим не изменился
     }
+    
+    // Сбрасываем предыдущий таймер дебаунса, если он существует
+    if (positionModeDebounceTimer) {
+        clearTimeout(positionModeDebounceTimer);
+    }
+    
+    // Устанавливаем таймер дебаунса
+    positionModeDebounceTimer = setTimeout(function() {
+        // Обновляем отслеживание последнего режима
+        lastPositionMode = isPositionMode;
+        
+        if (isPositionMode) {
+            // Обновляем кнопки
+            $('#velocityBtn').removeClass('active btn-velocity').addClass('btn-secondary');
+            $('#positionBtn').removeClass('btn-secondary').addClass('active btn-position');
+            
+            // Обновляем индикатор режима
+            $('#position_state').html('<div class="alert alert-position"><span class="mode-indicator mode-position"></span><strong>РЕЖИМ ПОЗИЦИОНИРОВАНИЯ</strong> <i class="fas fa-map-marker-alt ml-2"></i></div>');
+            
+            // Обновляем стили инпутов
+            $('.control-input').removeClass('velocity').addClass('position');
+            
+            // Обновляем уведомление для XY Chart
+            $('#xy_chart_info').removeClass('alert-warning').addClass('alert-info')
+                .html('<i class="fas fa-info-circle"></i> Данные о позиции активны. Карта обновляется.');
+                
+            // Показываем уведомление
+            showNotification('Включен режим позиционирования', 'success');
+        } else {
+            // Обновляем кнопки
+            $('#positionBtn').removeClass('active btn-position').addClass('btn-secondary');
+            $('#velocityBtn').removeClass('btn-secondary').addClass('active btn-velocity');
+            
+            // Обновляем индикатор режима
+            $('#position_state').html('<div class="alert alert-velocity"><span class="mode-indicator mode-velocity"></span><strong>РЕЖИМ УПРАВЛЕНИЯ СКОРОСТЬЮ</strong> <i class="fas fa-tachometer-alt ml-2"></i></div>');
+            
+            // Обновляем стили инпутов
+            $('.control-input').removeClass('position').addClass('velocity');
+            
+            // Обновляем уведомление для XY Chart
+            $('#xy_chart_info').removeClass('alert-info').addClass('alert-warning')
+                .html('<i class="fas fa-exclamation-triangle"></i> Внимание: Данные о позиции недоступны в режиме скорости.');
+                
+            // Показываем уведомление
+            showNotification('Включен режим управления скоростью', 'info');
+        }
+    }, notificationDebounceTime);
 }
 
 function setControls () {
@@ -1910,6 +2032,10 @@ function setupStateSubscription() {
         document.getElementById('drone_y').textContent = message.pose_with_covariance.pose.position.y.toFixed(2);
         document.getElementById('drone_z').textContent = message.pose_with_covariance.pose.position.z.toFixed(2);
         
+        // Обновляем значения высоты в индикаторах
+        document.getElementById('rangeAltitudeValue').textContent = message.pose_with_covariance.pose.position.z.toFixed(2);
+        document.getElementById('fusedAltitudeValue').textContent = message.pose_with_covariance.pose.position.z.toFixed(2);
+        
         // Обновление скорости
         document.getElementById('drone_vx').textContent = message.twist_with_covariance.twist.linear.x.toFixed(2);
         document.getElementById('drone_vy').textContent = message.twist_with_covariance.twist.linear.y.toFixed(2);
@@ -1922,6 +2048,20 @@ function setupStateSubscription() {
         
         // Обновление прогресс-баров
         updateProgressBars(message);
+    });
+    
+    // Подписка на данные барометра
+    var baroSub = new ROSLIB.Topic({
+        ros: ros,
+        name: '/pidrone/altitude',
+        messageType: 'std_msgs/Float32',
+        queue_length: 1,
+        throttle_rate: 100
+    });
+    
+    baroSub.subscribe(function(message) {
+        // Обновляем значение высоты барометра
+        document.getElementById('baroAltitudeValue').textContent = message.data.toFixed(2);
     });
 }
 
@@ -1959,4 +2099,73 @@ function updateProgressBars(message) {
     var euler = quaternionToEuler(message.pose_with_covariance.pose.orientation);
     var yawPercent = (((euler.yaw * 180 / Math.PI) + 180) / 360 * 100).toFixed(0);
     document.getElementById('drone_yaw_bar').style.width = yawPercent + '%';
+}
+
+// Улучшаем функцию showNotification для предотвращения дублирования
+var lastNotification = {
+    message: '',
+    type: '',
+    timestamp: 0
+};
+
+function showNotification(message, type) {
+    var currentTime = new Date().getTime();
+    
+    // Проверяем, не было ли такого же уведомления недавно
+    if (message === lastNotification.message && 
+        type === lastNotification.type &&
+        currentTime - lastNotification.timestamp < 2000) {
+        return; // Пропускаем дублирующееся уведомление
+    }
+    
+    // Обновляем информацию о последнем уведомлении
+    lastNotification.message = message;
+    lastNotification.type = type;
+    lastNotification.timestamp = currentTime;
+    
+    // Создаем элемент уведомления
+    var notification = $('<div class="notification notification-' + type + '">' +
+                         '<div class="notification-icon"><i class="fas ' + getIconForType(type) + '"></i></div>' +
+                         '<div class="notification-content">' + message + '</div>' +
+                         '<div class="notification-close"><i class="fas fa-times"></i></div>' +
+                         '</div>');
+    
+    // Добавляем на страницу
+    $('#notification-container').append(notification);
+    
+    // Анимируем появление
+    setTimeout(function() {
+        notification.addClass('show');
+    }, 10);
+    
+    // Автоматически скрываем через 5 секунд
+    setTimeout(function() {
+        notification.removeClass('show');
+        setTimeout(function() {
+            notification.remove();
+        }, 300);
+    }, 5000);
+    
+    // Обработчик клика по кнопке закрытия
+    notification.find('.notification-close').on('click', function() {
+        notification.removeClass('show');
+        setTimeout(function() {
+            notification.remove();
+        }, 300);
+    });
+}
+
+// Функция для определения иконки в зависимости от типа уведомления
+function getIconForType(type) {
+    switch(type) {
+        case 'success':
+            return 'fa-check-circle';
+        case 'warning':
+            return 'fa-exclamation-triangle';
+        case 'error':
+            return 'fa-exclamation-circle';
+        case 'info':
+        default:
+            return 'fa-info-circle';
+    }
 }

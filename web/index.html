@@ -22,6 +22,9 @@
 </head>
 
 <body>
+    <!-- Контейнер для уведомлений -->
+    <div id="notification-container"></div>
+    
     <div class="container-fluid">
         <nav class="navbar navbar-expand-lg navbar-dark">
             <div class="navbar-brand">
@@ -96,6 +99,34 @@
                             <input type="number" step="0.05" class="form-control" id="heightMax" value="3" onchange="changeHeightChartYScaleMax()"/>
                         </div>
                     </div>
+                    
+                    <div class="form-row mt-3">
+                        <div class="col-md-12">
+                            <div class="card sensor-fusion-card">
+                                <div class="card-header">
+                                    <h5><i class="fas fa-exchange-alt"></i> Данные датчиков высоты</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="alert alert-danger" id="rangeDisplay">
+                                                <strong>Высота IR:</strong> <span id="rangeAltitudeValue">0.00</span> м
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="alert alert-info" id="altitudeDisplay">
+                                                <strong>Высота барометра:</strong> <span id="baroAltitudeValue">0.00</span> м
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="alert alert-success" id="fusedAltitudeDisplay">
+                                        <strong>Объединенная высота:</strong> <span id="fusedAltitudeValue">0.00</span> м
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="dashboard-panel">
@@ -139,7 +170,7 @@
                         </label>
                     </div>
                     <div id="position_state" class="mb-3">
-                        <div class="alert alert-velocity"><span class="mode-indicator mode-velocity"></span>Режим управления скоростью</div>
+                        <div class="alert alert-velocity"><span class="mode-indicator mode-velocity"></span><strong>РЕЖИМ УПРАВЛЕНИЯ СКОРОСТЬЮ</strong> <i class="fas fa-tachometer-alt ml-2"></i></div>
                     </div>
 
                     <div class="form-row mb-3">
@@ -174,8 +205,12 @@
                         <button class="btn btn-primary btn-sm" onclick="togglePauseXYChart(this)">
                             <i class="fas fa-pause"></i> Пауза
                         </button>
+                        <div class="btn-group">
+                           
+           
+                        </div>
                     </div>
-                    <div style="height: 300px; position: relative;">
+                    <div class="xy-chart-container">
                         <canvas id="xyChart"></canvas>
                     </div>
                     <div class="alert alert-info mt-2 xy-chart-info" id="xy_chart_info">

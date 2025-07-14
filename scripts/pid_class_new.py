@@ -10,6 +10,8 @@ KP = 80.0   # Reduced for smoother control
 KI = 0.15   # Reduced to prevent oscillation
 KD = 60.0   # Reduced for less aggressive response
 
+HOVER_THROTTLE = 1300  
+DEADBAND = 50          
 #####################################################
 #						PID							#
 #####################################################
@@ -36,6 +38,10 @@ class PIDaxis():
         self.is_throttle_controller = False
         # Landing mode flag
         self.landing_mode = False
+        self.hover_throttle = HOVER_THROTTLE
+        self.deadband = DEADBAND
+        self.target_vel_z = 0.0       
+        self.current_vel_z = 0.0     
         
     def reset(self):
         self._old_err = None
@@ -52,11 +58,21 @@ class PIDaxis():
         self.last_time = None
         # Reset landing mode
         self.landing_mode = False
+        # Reset velocity variables
+        self.target_vel_z = 0.0
+        self.current_vel_z = 0.0
         
     def step(self, err, time_elapsed):
         # Special handling for throttle controller with improved height control logic
         if self.is_throttle_controller:
-            return self.adaptive_height_step(err, time_elapsed)
+            if self.landing_mode:
+                current_height = -err/100.0  # Convert from cm to m
+                desired_height = 0  
+            else:
+                current_height = TARGET_HEIGHT - err/100.0  # Convert from cm to m
+                desired_height = TARGET_HEIGHT
+                
+            return self.barometer_height_step(desired_height, current_height, time_elapsed)
             
         # Standard PID logic for other axes
         if self._old_err is None:
@@ -88,22 +104,10 @@ class PIDaxis():
         output = min(max(raw_output + self.midpoint, self.control_range[0]), self.control_range[1])
 
         return output
-        
-    def adaptive_height_step(self, err, time_elapsed):
-        """
-        Advanced throttle control with adaptive behavior for height maintenance
-        based on height_control_flight.py's calculate_throttle function
-        Simplified to not rely on height change rate calculations
-        """
-        # Get current height from error (err = TARGET_HEIGHT - current_height)
-        # If landing_mode is active, target_height is provided directly in err
-        if self.landing_mode:
-            # During landing, err is the direct error from target height (not relative to TARGET_HEIGHT)
-            current_height = -err/100.0  # Convert from cm to m
-            target_height = 0  # The target height is already factored into err
-        else:
-            current_height = TARGET_HEIGHT - err/100.0  # Convert from cm to m
-            target_height = TARGET_HEIGHT
+   
+    def barometer_height_step(self, desired_height, current_height, time_elapsed):
+       
+        height_error = desired_height - current_height
         
         # Calculate time elapsed since last call
         current_time = rospy.Time.now()
@@ -118,95 +122,66 @@ class PIDaxis():
         if dt <= 0:
             dt = 0.01  # Safeguard against zero division
         
+        if self.previous_height != 0:
+            self.current_vel_z = (current_height - self.previous_height) / dt
+        self.previous_height = current_height
+        
         if not self.landing_mode:
-            print("Height: %.2fm, Target: %.2fm" % (current_height, target_height))
+            print("Height: %.2fm, Target: %.2fm, Error: %.2fm, Vel_Z: %.2fm/s" % 
+                  (current_height, desired_height, height_error, self.current_vel_z))
         
         # Emergency braking only when too high and not in landing mode
-        if current_height > TARGET_HEIGHT * 1.75 and not self.landing_mode:
+        if current_height > desired_height * 1.75 and not self.landing_mode:
             print("EMERGENCY BRAKING: too high!")
-            return 1400  # Minimum throttle to quickly descend
-            
-        # Calculate error
-        if self.landing_mode:
-            # In landing mode, err is already the direct error
-            error = err/100.0  # Convert from cm to m
+            return 1100  # Minimum throttle to quickly descend
+        
+        p_term = height_error * self.kp
+        
+        self.height_integral += height_error * time_elapsed
+        self.height_integral = max(-0.2, min(self.height_integral, 0.2))
+        i_term = self.height_integral * self.ki
+        
+        if self.previous_height_error is None:
+            d_term = 0
         else:
-            error = TARGET_HEIGHT - current_height
+            d_term = (height_error - self.previous_height_error) / time_elapsed * self.kd
         
-        # Smooth error to reduce sudden changes
-        smoothed_error = error * 0.8 + self.previous_height_error * 0.2
+        self.previous_height_error = height_error
         
-        # Update integral term with time consideration
-        self.height_integral = self.height_integral + error * dt * 0.5
-        self.height_integral = max(-0.1, min(self.height_integral, 0.1))  # Limit integral
-        
-        # Calculate derivative with smoothed error
-        derivative = (smoothed_error - self.previous_height_error) / dt
-        
-        # Calculate PID terms
-        p_term = KP * smoothed_error
-        i_term = KI * self.height_integral
-        d_term = KD * derivative
+        self.target_vel_z = p_term + i_term + d_term
         
         # Special handling for landing mode
         if self.landing_mode:
             # Gentler descent during landing
-            base_throttle = 1430  # Lower base throttle for landing
+            base_throttle = 1220  # Lower base throttle for landing (adjusted for 1300 hover)
             gain = 0.5  # Reduced gain for smoother landing
             
             # When very close to the ground, reduce throttle further
             if current_height < 0.15:
-                base_throttle = 1400
+                base_throttle = 1180
                 gain = 0.4
                 
             throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)
             
             # Limit throttle range during landing
-            throttle = max(1380, min(throttle, 1450))
-        elif current_height > target_height:
-            # Above target height
-            height_diff = current_height - target_height
-            
-            if height_diff > 0.1:
-                base_throttle = 1428
-                gain = 0.65
-            else:
-                base_throttle = 1430
-                gain = 0.7
-                
-            throttle_adjustment = p_term + i_term + d_term
-            throttle = base_throttle + int(throttle_adjustment * gain)
+            throttle = max(1100, min(throttle, 1250))
         else:
-            # Below target - gentle control
-            # Adaptive base throttle based on distance to target
-            height_diff = target_height - current_height
+            pid_output = p_term + i_term + d_term
             
-            if height_diff > 0.3:
-                # Significantly below target - gentler response for slow takeoff
-                base_throttle = 1434
-                gain = 0.45
-            elif height_diff > 0.1:
-                base_throttle = 1430
-                gain = 0.6  
+            if abs(pid_output) < 0.05: 
+                throttle = self.hover_throttle
             else:
-                # Close to target
-                base_throttle = 1435   
-                gain = 0.60
-                
-            throttle_adjustment = p_term + i_term + d_term
-            throttle = base_throttle + int(throttle_adjustment * gain)
+                scaled_output = int(pid_output * 150) 
+                if scaled_output > 0:
+                    throttle = self.hover_throttle + self.deadband + scaled_output
+                else:
+                    throttle = self.hover_throttle - self.deadband + scaled_output
         
-        # Smoothly limit throttle range
-        if not self.landing_mode:
-            throttle = max(1380, min(throttle, 1500))  
-        
-        # Store values for next iteration
-        self.previous_height = current_height
-        self.previous_height_error = smoothed_error
+        throttle = max(1100, min(throttle, 1500))  
         
         if not self.landing_mode or int(rospy.get_time() * 2) != int((rospy.get_time() - 0.1) * 2):
-            print("Throttle: %d" % (throttle))
+            print("Throttle: %d (hover: %d, deadband: %d)" % (throttle, self.hover_throttle, self.deadband))
         
         return throttle
 
@@ -223,9 +198,9 @@ class PID:
 
                  yaw=PIDaxis(0.0, 0.0, 0.0),
 
-                 # Throttle controller uses adaptive_height_step instead of standard PID
-                 throttle=PIDaxis(0, 0, 0, i_range=(-400, 400), 
-                                 control_range=(1100, 1600), d_range=(-40, 40), 
+                 # Throttle controller uses barometer_height_step for altitude control
+                 throttle=PIDaxis(KP/100.0, KI/100.0, KD/100.0, i_range=(-400, 400), 
+                                 control_range=(1100, 1500), d_range=(-40, 40), 
                                  midpoint=1300)
                  ):
 
@@ -319,8 +294,8 @@ class PID:
         # Compute yaw command
         cmd_y = 1500 + cmd_yaw_velocity
 
-        # Use adaptive height control for throttle
-        cmd_t = self.throttle.adaptive_height_step(error.z, time_elapsed)
+        # Use barometer-based height control for throttle
+        cmd_t = self.throttle.step(error.z, time_elapsed)
         
         
         # Return commands in order [ROLL, PITCH, THROTTLE, YAW] (changed from ROLL, PITCH, YAW, THROTTLE)

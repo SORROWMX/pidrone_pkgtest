@@ -6,6 +6,7 @@ import tf
 from sensor_msgs.msg import Imu, Range
 from geometry_msgs.msg import TwistStamped
 from pidrone_pkg.msg import State
+from std_msgs.msg import Float32
 
 # UKF imports
 # The matplotlib imports and the matplotlib.use('Pdf') line make it so that the
@@ -41,10 +42,12 @@ class StateEstimation(object):
         self.got_ir = False
         self.got_optical_flow = False
         self.got_imu = False
+        self.got_baro = False
         
         self.ir_topic_str = '/pidrone/infrared'
         self.imu_topic_str = '/pidrone/imu'
         self.optical_flow_topic_str = '/pidrone/picamera/twist'
+        self.baro_topic_str = '/pidrone/altitude'
         throttle_suffix = '_throttle'
         
         if ir_throttled:
@@ -55,6 +58,18 @@ class StateEstimation(object):
             self.optical_flow_topic_str += throttle_suffix
             
         self.in_callback = False
+
+        # Altitude sensor variables
+        self.range_altitude = 0.0
+        self.baro_altitude = 0.0
+        self.last_range_time = None
+        self.last_baro_time = None
+        self.range_timeout = 1.0  # seconds
+        self.baro_timeout = 1.0  # seconds
+        
+        # Sensor fusion weights for altitude
+        self.range_weight = 0.7  # Range finder more accurate at close distances
+        self.baro_weight = 0.3   # Barometer less accurate but works at all altitudes
 
         self.initialize_ukf()
         
@@ -85,6 +100,8 @@ class StateEstimation(object):
         rospy.Subscriber(self.ir_topic_str, Range, self.ir_data_callback)
         rospy.Subscriber(self.optical_flow_topic_str, TwistStamped,
                          self.optical_flow_data_callback)
+        # Subscribe to barometer altitude data
+        rospy.Subscriber(self.baro_topic_str, Float32, self.baro_data_callback)
         
         # Create the publisher to publish state estimates
         self.state_pub = rospy.Publisher('/pidrone/state', State, queue_size=1,
@@ -109,9 +126,10 @@ class StateEstimation(object):
         #  [yaw]]
         
         # Number of measurement variables that the drone receives
-        self.measurement_vector_dim = 4
+        self.measurement_vector_dim = 5
         # The measurement variables consist of the following vector:
         # [[slant_range],
+        #  [baro_altitude],
         #  [x_vel],
         #  [y_vel],
         #  [yaw]]
@@ -154,6 +172,8 @@ class StateEstimation(object):
         # IR slant range variance (m^2), determined experimentally in a static
         # setup with mean range around 0.335 m:
         self.measurement_cov_ir = np.array([2.2221e-05])
+        # Barometer altitude variance (m^2)
+        self.measurement_cov_baro = np.array([0.001])  # Tune based on your barometer accuracy
         self.measurement_cov_optical_flow = np.diag([0.01, 0.01])
         self.measurement_cov_yaw = np.array([0.0005])
                 
@@ -255,6 +275,11 @@ class StateEstimation(object):
         if self.in_callback:
             return
         self.in_callback = True
+        
+        # Store range data with timestamp
+        self.range_altitude = data.range
+        self.last_range_time = rospy.Time.now()
+        
         if self.ready_to_filter:
             self.print_notice_if_first()
             self.update_input_time(data)
@@ -281,6 +306,78 @@ class StateEstimation(object):
             self.got_ir = True
             self.check_if_ready_to_filter()
         self.in_callback = False
+        
+    def baro_data_callback(self, data):
+        '''
+        Handle the receipt of a Float32 message from the barometer.
+        
+        This method PREDICTS with the most recent control input and UPDATES.
+        '''
+        if self.in_callback:
+            return
+        self.in_callback = True
+        
+        # Store barometer data with timestamp
+        self.baro_altitude = data.data
+        self.last_baro_time = rospy.Time.now()
+        
+        if self.ready_to_filter:
+            self.print_notice_if_first()
+            self.update_input_time(data)
+            self.ukf_predict()
+                        
+            # Get the best altitude estimate using a weighted combination of sensors
+            altitude = self.get_best_altitude()
+            
+            # Now that a prediction has been formed to bring the current prior
+            # state estimate to the same point in time as the measurement,
+            # perform a measurement update with the barometer altitude reading
+            measurement_z = np.array([altitude])
+            self.ukf.update(measurement_z,
+                            hx=self.measurement_function_altitude,
+                            R=self.measurement_cov_ir)  # Use IR covariance as it's typically more accurate
+            self.publish_current_state()
+        else:
+            self.initialize_input_time(data)
+            # Got a barometer altitude reading
+            self.got_baro = True
+            self.check_if_ready_to_filter()
+        self.in_callback = False
+        
+    def get_best_altitude(self):
+        """
+        Determine the best altitude estimate based on available sensors
+        """
+        current_time = rospy.Time.now()
+        range_valid = (self.last_range_time is not None and 
+                      current_time - self.last_range_time < rospy.Duration.from_sec(self.range_timeout))
+        baro_valid = (self.last_baro_time is not None and 
+                     current_time - self.last_baro_time < rospy.Duration.from_sec(self.baro_timeout))
+                     
+        # Both sensors valid - use weighted average
+        if range_valid and baro_valid:
+            # Use more weight for range when close to ground (< 1.0m)
+            if self.range_altitude < 1.0:
+                # When very close to ground, trust range finder more
+                range_w = 0.8
+                baro_w = 0.2
+            else:
+                # At higher altitudes, standard weights
+                range_w = self.range_weight
+                baro_w = self.baro_weight
+            
+            return range_w * self.range_altitude + baro_w * self.baro_altitude
+        
+        # Only range is valid
+        elif range_valid:
+            return self.range_altitude
+        
+        # Only barometer is valid
+        elif baro_valid:
+            return self.baro_altitude
+        
+        # No valid sensors - use last known altitude or default
+        return self.ukf.x[2]  # Return the current state estimate
         
     def optical_flow_data_callback(self, data):
         '''
@@ -440,6 +537,12 @@ class StateEstimation(object):
         pass
         
     def measurement_function_ir(self, x):
+        return np.array([x[2]])
+        
+    def measurement_function_altitude(self, x):
+        """
+        For use when the measurement is an altitude estimate (either from IR or barometer)
+        """
         return np.array([x[2]])
         
     def measurement_function_optical_flow(self, x):

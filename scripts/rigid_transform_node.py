@@ -6,7 +6,7 @@ import time
 import cv2
 import rospy
 import numpy as np
-from std_msgs.msg import Empty, Bool
+from std_msgs.msg import Empty, Bool, Float32
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import CompressedImage
 from pidrone_pkg.msg import State
@@ -38,9 +38,22 @@ class RigidTransformNode(object):
 
         # initialize the Pose data
         self.pose_msg = PoseStamped()
-        self.altitude = 0.0
+        
+        # Altitude data
+        self.range_altitude = 0.03  # Initialize range finder altitude
+        self.baro_altitude = None   # Barometer altitude
         self.x_position_from_state = 0.0
         self.y_position_from_state = 0.0
+
+        # Sensor health monitoring
+        self.last_range_time = rospy.Time.now()
+        self.last_baro_time = None
+        self.range_timeout = rospy.Duration.from_sec(1.0)
+        self.baro_timeout = rospy.Duration.from_sec(1.0)
+        
+        # Sensor fusion weights
+        self.range_weight = 0.7  # Range finder more accurate at close range
+        self.baro_weight = 0.3   # Barometer less accurate but works at all altitudes
 
         # position hold is initialized as False
         self.position_control = False
@@ -68,76 +81,85 @@ class RigidTransformNode(object):
         self._pcsub = rospy.Subscriber("/pidrone/position_control", Bool, self.position_control_callback, queue_size=1)
         self._stsub = rospy.Subscriber("/pidrone/state", State, self.state_callback, queue_size=1)
         self._isub = rospy.Subscriber("/raspicam_node/image/compressed", CompressedImage, self.image_callback, queue_size=1)
-        self._sub_alt = rospy.Subscriber('/pidrone/range', Range, self.altitude_cb, queue_size=1)
+        self._sub_range = rospy.Subscriber('/pidrone/range', Range, self.range_callback, queue_size=1)
+        self._sub_baro = rospy.Subscriber('/pidrone/altitude', Float32, self.baro_callback, queue_size=1)
 
-        self.altitude = 0.03 # initialize to a bit off the ground
-        self.altitude_ts = rospy.Time.now()
+
+    def range_callback(self, msg):
+        """
+        Update rangefinder altitude
+        """
+        self.range_altitude = msg.range
+        self.last_range_time = rospy.Time.now()
         
-
-    def altitude_cb(self, msg):
+    def baro_callback(self, msg):
         """
-        The altitude of the robot
-        Args:
-            msg:  the message publishing the altitude
-
+        Update barometer altitude
         """
-        self.altitude = msg.range
-        self.altitude_ts = msg.header.stamp
-
+        self.baro_altitude = msg.data
+        self.last_baro_time = rospy.Time.now()
+        
+    def get_best_altitude(self):
+        """
+        Determine the best altitude estimate based on available sensors
+        """
+        current_time = rospy.Time.now()
+        range_valid = (current_time - self.last_range_time < self.range_timeout)
+        baro_valid = (self.baro_altitude is not None and 
+                     (self.last_baro_time is not None) and 
+                     (current_time - self.last_baro_time < self.baro_timeout))
+                     
+        # Both sensors valid - use weighted average
+        if range_valid and baro_valid:
+            # Use more weight for range when close to ground (< 1.0m)
+            if self.range_altitude < 1.0:
+                # When very close to ground, trust range finder more
+                range_w = 0.8
+                baro_w = 0.2
+            else:
+                # At higher altitudes, standard weights
+                range_w = self.range_weight
+                baro_w = self.baro_weight
+            
+            return range_w * self.range_altitude + baro_w * self.baro_altitude
+        
+        # Only range is valid
+        elif range_valid:
+            return self.range_altitude
+        
+        # Only barometer is valid
+        elif baro_valid:
+            return self.baro_altitude
+        
+        # No valid sensors - use last known altitude or default
+        return max(0.03, self.range_altitude)
 
     def image_callback(self, msg):
         ''' A method that is called everytime an image is taken '''
 
-        #print("image cb: " + msg.format)
-        #jpg = np.frombuffer(msg.data, np.uint8)
-        #data = cv2.imdecode(jpg, cv2.IMREAD_COLOR)
-        
-        #image = np.reshape(np.frombuffer(data, dtype=np.uint8), (240, 320, 3))
-
-        
-        #image = self.bridge.compressed_imgmsg_to_cv2(msg)
         image = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding="mono8")
         dimage = image.copy()
 
-        #print(image.shape)
-        #cv2.waitKey(0)
-        #time.sleep(10)
+        # Get the current altitude
+        altitude = self.get_best_altitude()
+        
         # Run the following only if position control is enabled to prevent
         # wasting computation resources on unused position data
-
-        duration_from_last_altitude = rospy.Time.now() - self.altitude_ts
-        if duration_from_last_altitude.to_sec() > 10:
-            rospy.logwarn("No altitude received for {:10.4f} seconds.".format(duration_from_last_altitude.to_sec()))
-        
         if self.position_control:
-            
-
             # if there is no first image stored, tell the user to capture an image
             if self.first:
                 self.first = False
                 print("Capturing a new first image")
                 self.first_image = image
                 self.first_points = cv2.goodFeaturesToTrack(self.first_image, maxCorners=10, qualityLevel=0.01, minDistance=8)
-                # for point in self.first_points:
-                #     x = int(point[0,0])
-                #     y = int(point[0,1])
-                #     print((x,y))
-                #     cv2.circle(dimage, center=(x,y), radius=2, color=(255,0,0), thickness=10)
-                # cv2.imshow("image", dimage)
-                # cv2.waitKey(10)
                 self.previous_image = image
                 self.last_first_time = rospy.get_time()
             # if a first image has been stored
             else:
                 # try to estimate the transformations from the first image
-                #print(self.first_image)
-
                 nextPts, status, err = cv2.calcOpticalFlowPyrLK(self.first_image, image, self.first_points, None)
 
                 transform_first, inliers = cv2.estimateAffinePartial2D(self.first_points, nextPts, False)
-                #print(transform_first)
-
-                #cv2.estimateAffinePartial2D(self.first_image, image, False)
 
                 # if the first image was visible (the transformation was succesful) :
                 if transform_first is not None:
@@ -145,8 +167,8 @@ class RigidTransformNode(object):
                     # calculate the x,y, and yaw translations from the transformation
                     translation_first, yaw_first = self.translation_and_yaw(transform_first)
                     # use an EMA filter to smooth the position and yaw values
-                    self.pose_msg.pose.position.x = translation_first[0]*self.altitude
-                    self.pose_msg.pose.position.y = translation_first[1]*self.altitude
+                    self.pose_msg.pose.position.x = translation_first[0] * altitude
+                    self.pose_msg.pose.position.y = translation_first[1] * altitude
                     # With just a yaw, the x and y components of the
                     # quaternion are 0
                     _,_,z,w = tf.transformations.quaternion_from_euler(0,0,yaw_first)
@@ -172,8 +194,8 @@ class RigidTransformNode(object):
                         print(("integrated", time_since_first))
                         print(("max_first_counter: ", self.max_first_counter))
                         int_displacement, yaw_previous = self.translation_and_yaw(transform_previous)
-                        self.pose_msg.pose.position.x = self.x_position_from_state + (int_displacement[0]*self.altitude)
-                        self.pose_msg.pose.position.y = self.y_position_from_state + (int_displacement[1]*self.altitude)
+                        self.pose_msg.pose.position.x = self.x_position_from_state + (int_displacement[0] * altitude)
+                        self.pose_msg.pose.position.y = self.y_position_from_state + (int_displacement[1] * altitude)
                         _,_,z,w = tf.transformations.quaternion_from_euler(0,0,yaw_previous)
                         self.pose_msg.pose.orientation.z = z
                         self.pose_msg.pose.orientation.w = w
@@ -192,7 +214,7 @@ class RigidTransformNode(object):
         # if the camera is lost over ten times in a row, then publish lost
         # to disable position control
         if self.lost:
-            if self.consecutive_lost_counter >= 10:
+            if self.consecutive_lost_counter >= 20:
                 self._lostpub.publish(True)
                 self.consecutive_lost_counter = 0
         else:
@@ -242,10 +264,8 @@ class RigidTransformNode(object):
 
     def state_callback(self, msg):
         """
-        Store z position (altitude) reading from State, along with most recent
-        x and y position estimate
+        Store position readings from State
         """
-        self.altitude = msg.pose_with_covariance.pose.position.z
         self.x_position_from_state = msg.pose_with_covariance.pose.position.x
         self.y_position_from_state = msg.pose_with_covariance.pose.position.y
         
