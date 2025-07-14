@@ -9,7 +9,7 @@ import traceback
 import argparse
 import numpy as np
 import command_values as cmds
-from pid_class_new import PID, PIDaxis, TARGET_HEIGHT
+from pid_class_new import PID, PIDaxis
 from geometry_msgs.msg import Pose, Twist
 from pidrone_pkg.msg import Mode, RC, State
 from std_msgs.msg import Float32, Empty, Bool
@@ -29,11 +29,15 @@ class PIDController(object):
         self.position_control = False
         self.last_position_control = False
 
+        # Initialize the primary PID with default target_height
+        self.pid = PID()
+        self.target_height = self.pid.target_height
+
         # Initialize the current and desired positions
         self.current_position = Position()
-        # Set initial desired height to TARGET_HEIGHT
-        self.desired_position = Position(z=TARGET_HEIGHT)
-        self.last_desired_position = Position(z=TARGET_HEIGHT)
+        # Set initial desired height to target_height
+        self.desired_position = Position(z=self.target_height)
+        self.last_desired_position = Position(z=self.target_height)
 
         # Initialize the position error
         self.position_error = Error()
@@ -56,9 +60,6 @@ class PIDController(object):
         # Store the start time of the desired velocities
         self.desired_velocity_start_time = None
         self.desired_yaw_velocity_start_time = None
-
-        # Initialize the primary PID
-        self.pid = PID()
 
         # Initialize the error used for the PID which is vx, vy, z where vx and
         # vy are velocities, and z is the error in the altitude of the drone
@@ -136,14 +137,14 @@ class PIDController(object):
         if self.absolute_desired_position:
             self.desired_position.x = msg.position.x
             self.desired_position.y = msg.position.y
-            # Always maintain TARGET_HEIGHT regardless of commanded Z
-            self.desired_position.z = TARGET_HEIGHT
+            # Always maintain target_height regardless of commanded Z
+            self.desired_position.z = self.target_height
         # set the desired positions relative to the current position (except for z to make it more responsive)
         else:
             self.desired_position.x = self.current_position.x + msg.position.x
             self.desired_position.y = self.current_position.y + msg.position.y
-            # Always maintain TARGET_HEIGHT regardless of commanded Z
-            self.desired_position.z = TARGET_HEIGHT
+            # Always maintain target_height regardless of commanded Z
+            self.desired_position.z = self.target_height
 
         if self.desired_position != self.last_desired_position:
             # the drone is moving between desired positions
@@ -189,11 +190,11 @@ class PIDController(object):
             
         self.position_control = msg.data
         if self.position_control:
-            # Store current x,y position but always maintain TARGET_HEIGHT for z
+            # Store current x,y position but always maintain target_height for z
             self.desired_position = Position(
                 self.current_position.x,
                 self.current_position.y,
-                TARGET_HEIGHT
+                self.target_height
             )
         if (self.position_control != self.last_position_control):
             print("Position Control", self.position_control)
@@ -426,8 +427,8 @@ class PIDController(object):
         '''
         # reset position control variables
         self.position_error = Error(0,0,0)
-        # Keep X,Y coordinates but set Z to TARGET_HEIGHT
-        self.desired_position = Position(self.current_position.x, self.current_position.y, TARGET_HEIGHT)
+        # Keep X,Y coordinates but set Z to target_height
+        self.desired_position = Position(self.current_position.x, self.current_position.y, self.target_height)
         # reset velocity control_variables
         self.velocity_error = Error(0,0,0)
         self.desired_velocity = Velocity(0,0,0)
