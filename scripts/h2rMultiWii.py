@@ -66,6 +66,10 @@ class MultiWii:
     IS_SERIAL = 211
     DEBUG = 254
     EEPROM_WRITE = 250
+    
+    # INAV specific MSP commands
+    MSP_NAV_POSHOLD = 12
+  
 
     SEND_ZERO_STRUCT1 = struct.Struct('<2B%dh' % 0)
 
@@ -85,6 +89,9 @@ class MultiWii:
         self.motor = {'m1':0,'m2':0,'m3':0,'m4':0,'elapsed':0,'timestamp':0}
         self.attitude = {'angx':0,'angy':0,'heading':0,'elapsed':0,'timestamp':0}
         self.message = {'angx':0,'angy':0,'heading':0,'roll':0,'pitch':0,'yaw':0,'throttle':0,'elapsed':0,'timestamp':0}
+        self.navPoshold = {'user_control_mode':0, 'max_auto_speed':0, 'max_auto_climb_rate':0, 
+                           'max_manual_speed':0, 'max_manual_climb_rate':0, 'max_bank_angle':0, 
+                           'althold_throttle_type':0, 'hover_throttle':0, 'elapsed':0, 'timestamp':0}
 
         self.pid = {'roll':None, 'pitch': None, 'yaw':None, 'alt':None ,'pos':None, 'posr':None, 'navr':None, 'level':None, 'mag':None, 'vel':None}
 
@@ -263,6 +270,35 @@ class MultiWii:
                     self.analog['amperage'] = temp[3]
                     self.analog['timestamp'] = readTime
                 return self.analog
+            elif code == MultiWii.MSP_NAV_POSHOLD:
+                # Обработка данных MSP_NAV_POSHOLD
+                # Формат: uint8_t, uint16_t, uint16_t, uint16_t, uint16_t, uint8_t, uint8_t, uint16_t
+                try:
+                    temp = struct.unpack('<BHHHHBBHxx', data)  # xx в конце добавлено для выравнивания если есть дополнительные байты
+                    self.navPoshold['cmd'] = code
+                    self.navPoshold['user_control_mode'] = temp[0]
+                    self.navPoshold['max_auto_speed'] = temp[1]
+                    self.navPoshold['max_auto_climb_rate'] = temp[2]
+                    self.navPoshold['max_manual_speed'] = temp[3]
+                    self.navPoshold['max_manual_climb_rate'] = temp[4]
+                    self.navPoshold['max_bank_angle'] = temp[5]
+                    self.navPoshold['althold_throttle_type'] = temp[6]
+                    self.navPoshold['hover_throttle'] = temp[7]
+                    self.navPoshold['elapsed'] = elapsed
+                    self.navPoshold['timestamp'] = readTime
+                except struct.error as e:
+                    print(f"Ошибка разбора данных MSP_NAV_POSHOLD: {e}")
+                    print(f"Длина данных: {datalength}, данные: {data}")
+                    # Альтернативный формат, если предыдущий не сработал
+                    if datalength >= 14:  # Минимальная длина для получения hover_throttle
+                        try:
+                            # Получаем только hover_throttle на позиции 11-12
+                            hover_throttle = struct.unpack('<H', data[10:12])[0]
+                            self.navPoshold['hover_throttle'] = hover_throttle
+                            self.navPoshold['timestamp'] = readTime
+                        except struct.error:
+                            print("Не удалось получить hover_throttle")
+                return self.navPoshold
             elif code == MultiWii.BOXNAMES:
                 print("datalength", datalength)
                 assert datalength % 2 == 0
@@ -430,4 +466,41 @@ class MultiWii:
 
     def eepromWrite(self):
         self.send_raw_command(0, MultiWii.EEPROM_WRITE, [])
+
+    """
+    Получение значения hover_throttle через MSP_NAV_POSHOLD
+    """
+    def get_hover_throttle(self):
+        # Отправляем команду MSP_NAV_POSHOLD
+        print("Запрос значения hover_throttle...")
+        self.send_raw_command(0, MultiWii.MSP_NAV_POSHOLD, [])
+        result = self.receiveDataPacket()
+        
+        if result and 'hover_throttle' in result:
+            print(f"Получено значение hover_throttle: {result['hover_throttle']}")
+            return result['hover_throttle']
+        else:
+            print("Не удалось получить значение hover_throttle")
+            return None
+
+    """
+    Тестовая функция для получения hover_throttle
+    """
+    def test_get_hover_throttle(self):
+        hover_throttle = self.get_hover_throttle()
+        if hover_throttle is not None:
+            print(f"Тест успешен: hover_throttle = {hover_throttle}")
+            if hover_throttle >= 1000 and hover_throttle <= 2000:
+                print("Значение hover_throttle находится в допустимом диапазоне (1000-2000)")
+            else:
+                print("Внимание: значение hover_throttle находится вне допустимого диапазона (1000-2000)")
+        else:
+            print("Тест не пройден: не удалось получить hover_throttle")
+        
+        # Выводим все данные, полученные в ответе
+        print("Полные данные navPoshold:")
+        for key, value in self.navPoshold.items():
+            print(f"  {key}: {value}")
+        
+        return hover_throttle
 
