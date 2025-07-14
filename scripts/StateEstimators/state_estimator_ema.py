@@ -10,7 +10,7 @@ import time
 from pidrone_pkg.msg import State
 from sensor_msgs.msg import Range, Imu
 from geometry_msgs.msg import PoseStamped, TwistStamped
-from std_msgs.msg import Header, Bool, Empty, Float32
+from std_msgs.msg import Header, Bool, Empty
 
 
 class EMAStateEstimator(object):
@@ -25,7 +25,6 @@ class EMAStateEstimator(object):
     /pidrone/imu
     /pidrone/picamera/pose
     /pidrone/picamera/twist
-    /pidrone/altitude (for barometer data)
     '''
 
     def __init__(self):
@@ -46,7 +45,6 @@ class EMAStateEstimator(object):
         # (pose is not necessary to fly, only to fly with position control)
         self.received_twist_data = False
         self.received_range_data = False
-        self.received_baro_data = False
 
         # angle compensation values (to account for tilt of drone)
         self.mw_angle_comp_x = 0
@@ -58,18 +56,6 @@ class EMAStateEstimator(object):
         self.range_timeout = 1.0  # seconds
         self.range_healthy = False
         self.range_warning_printed = False
-        
-        # Barometer data
-        self.barometer_altitude = 0.0
-        self.last_baro_time = None
-        self.baro_timeout = 1.0  # seconds
-        self.baro_healthy = False
-        self.baro_warning_printed = False
-        
-        # Sensor fusion weights
-        # Higher weight means the sensor is trusted more in the fusion algorithm
-        self.range_weight = 0.7  # Range finder is typically more accurate at close distances
-        self.baro_weight = 0.3   # Barometer is less accurate but works at all altitudes
 
 
     # ROS Subscriber Callback Methods:
@@ -119,27 +105,6 @@ class EMAStateEstimator(object):
             if self.range_warning_printed:
                 print("Range sensor data resumed")
                 self.range_warning_printed = False
-                
-    def barometer_callback(self, data):
-        """ Update the barometer altitude data """
-        # Store the barometer altitude
-        self.barometer_altitude = data.data
-        # Set received barometer data to True
-        self.received_baro_data = True
-        
-        # Update barometer data health monitoring
-        current_time = rospy.get_time()
-        self.last_baro_time = current_time
-        if not self.baro_healthy:
-            self.baro_healthy = True
-            if self.baro_warning_printed:
-                print("Barometer data resumed")
-                self.baro_warning_printed = False
-        
-        # If we have range data as well, combine the sensors
-        # Don't check sensor health here to avoid redundant checks
-        if self.received_range_data:
-            self.filter_combined_altitude()
 
     # EMA Filtering Methods:
     ########################
@@ -195,33 +160,10 @@ class EMAStateEstimator(object):
         prev_altitude = self.state.pose_with_covariance.pose.position.z
         # use an ema filter to smoothe the range reading
         smoothed_altitude= alpha * curr_altitude + (1 - alpha) * prev_altitude
-        # ensure that the range value is between 0 and 1.5 m
+        # ensure that the range value is between 0 and 0.55 m
         smoothed_altitude = max(0, min(smoothed_altitude, 1.5))
-        
-        # Only update if we don't have barometer data
-        if not (self.received_baro_data and self.check_barometer_health()):
-            # update the current z position
-            self.state.pose_with_covariance.pose.position.z = smoothed_altitude
-        
-        # Store the processed range reading for sensor fusion
-        self.processed_range = smoothed_altitude
-        
-    def filter_combined_altitude(self):
-        """ Combine rangefinder and barometer data using weighted average """
-        if self.received_range_data and self.received_baro_data:
-            # Use predefined weights - don't run additional health checks here for performance
-            range_weight = self.range_weight
-            baro_weight = self.baro_weight
-            
-            # Apply weighted average for altitude estimation
-            combined_altitude = (range_weight * self.processed_range + 
-                               baro_weight * self.barometer_altitude)
-            
-            # Update the altitude
-            self.state.pose_with_covariance.pose.position.z = combined_altitude
-            
-            # Debug output for sensor fusion (uncomment for debugging)
-            # print(f"Range: {self.processed_range:.2f}m, Baro: {self.barometer_altitude:.2f}m, Combined: {combined_altitude:.2f}m")
+        # update the current z position
+        self.state.pose_with_covariance.pose.position.z = smoothed_altitude
 
     def check_range_sensor_health(self):
         """Check if the range sensor is providing updates within the expected timeframe"""
@@ -236,22 +178,6 @@ class EMAStateEstimator(object):
                 print("WARNING: Range sensor data timeout. Last update was {:.2f} seconds ago".format(time_since_last_range))
                 self.range_warning_printed = True
                 self.range_healthy = False
-            return False
-        return True
-        
-    def check_barometer_health(self):
-        """Check if the barometer is providing updates within the expected timeframe"""
-        if self.last_baro_time is None:
-            return False
-            
-        current_time = rospy.get_time()
-        time_since_last_baro = current_time - self.last_baro_time
-        
-        if time_since_last_baro > self.baro_timeout:
-            if self.baro_healthy or not self.baro_warning_printed:
-                print("WARNING: Barometer data timeout. Last update was {:.2f} seconds ago".format(time_since_last_baro))
-                self.baro_warning_printed = True
-                self.baro_healthy = False
             return False
         return True
 
@@ -308,8 +234,6 @@ def main():
     rospy.Subscriber('/pidrone/picamera/pose', PoseStamped, state_estimator.pose_callback)
     rospy.Subscriber('/pidrone/range', Range, state_estimator.range_callback)
     rospy.Subscriber('/pidrone/imu', Imu, state_estimator.imu_callback)
-    # Subscribe to barometer data from the flight controller
-    rospy.Subscriber('/pidrone/altitude', Float32, state_estimator.barometer_callback)
 
     # set up ctrl-c handler
     signal.signal(signal.SIGINT, state_estimator.ctrl_c_handler)
@@ -320,19 +244,9 @@ def main():
 
     # set the publishing rate (Hz)
     rate = rospy.Rate(60)
-    
-    # Track time for less frequent health checks
-    last_health_check = rospy.get_time()
-    health_check_interval = 2.0  # Check health every 2 seconds instead of every loop
-    
     while not rospy.is_shutdown():
-        # Only check sensor health periodically to save processing
-        current_time = rospy.get_time()
-        if current_time - last_health_check > health_check_interval:
-            state_estimator.check_range_sensor_health()
-            state_estimator.check_barometer_health()
-            last_health_check = current_time
-            
+        # Check range sensor health
+        state_estimator.check_range_sensor_health()
         statepub.publish(state_estimator.state)
         rate.sleep()
 

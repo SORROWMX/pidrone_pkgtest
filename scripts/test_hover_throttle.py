@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Test script for getting hover_throttle through MSP protocol
-and integrating this value with PID controller.
+Test script for getting hover_throttle through MSP_NAV_POSHOLD command
+from INAV flight controller.
 """
 
 import sys
@@ -10,6 +10,7 @@ import time
 import rospy
 from h2rMultiWii import MultiWii
 from pid_class_new import PID, PIDaxis, HOVER_THROTTLE, DEADBAND
+from serial import SerialException
 
 def main():
     # Initialize ROS node
@@ -22,81 +23,63 @@ def main():
         # Default to /dev/ttyACM0
         serial_port = '/dev/ttyACM0'
     
+    print("\n===== HOVER THROTTLE TEST =====")
     print("Connecting to flight controller via port %s..." % serial_port)
     
     try:
         # Initialize connection to flight controller
         board = MultiWii(serial_port)
+        print("Connected to flight controller")
         
-        # Get firmware version information
-        print("Requesting controller identification...")
-        ident = board.getData(MultiWii.IDENT)
-        print("Controller information: %s" % ident)
+        # Get current hover_throttle value from INAV via MSP_NAV_POSHOLD
+        print("\nRequesting hover_throttle value from flight controller...")
+        hover_throttle_inav = board.get_hover_throttle()
         
-        # Get current hover_throttle value from INAV via MSP
-        print("\nStarting hover_throttle test...")
-        hover_throttle_inav = board.test_get_hover_throttle()
-        
-        # Get current value from PID controller settings
-        print("\nCurrent values in PID controller:")
-        print("HOVER_THROTTLE = %d" % HOVER_THROTTLE)
-        print("DEADBAND = %d" % DEADBAND)
-        
-        # Check if values match
         if hover_throttle_inav is not None:
+            print("\nSuccessfully received hover_throttle value")
+            print("INAV hover_throttle: %d μs" % hover_throttle_inav)
+            
+            # Get current value from PID controller settings
+            print("\nCurrent values in PID controller:")
+            print("HOVER_THROTTLE = %d μs" % HOVER_THROTTLE)
+            print("DEADBAND = %d μs" % DEADBAND)
+            
+            # Check if values match
             if hover_throttle_inav == HOVER_THROTTLE:
-                print("\nValues match: PID controller already uses the correct hover_throttle value")
+                print("\nHover throttle values match ✓")
+                print("PID controller already uses the correct hover_throttle value")
             else:
-                print("\nValues do not match:")
-                print("  - INAV hover_throttle: %d" % hover_throttle_inav)
-                print("  - PID hover_throttle: %d" % HOVER_THROTTLE)
-                print("\nRecommended to update HOVER_THROTTLE value in pid_class_new.py")
+                print("\nHover throttle values DO NOT match ✗")
+                print("  - INAV hover_throttle: %d μs" % hover_throttle_inav)
+                print("  - PID hover_throttle: %d μs" % HOVER_THROTTLE)
+                print("\nRecommendation: Update HOVER_THROTTLE value in pid_class_new.py to match INAV's value")
+        else:
+            print("\nFailed to get hover_throttle value from flight controller")
+            print("Make sure the flight controller is correctly connected and running INAV firmware")
+            
+        # Try to get additional information about the NAV_POSHOLD settings
+        print("\nRequesting additional NAV_POSHOLD data...")
+        board.getData(MultiWii.MSP_NAV_POSHOLD)
         
-        # Get altitude sensor data
-        print("\nRequesting barometer data...")
-        altitude_data = board.getData(MultiWii.ALTITUDE)
-        print("Altitude data: %s" % altitude_data)
+        if hasattr(board, 'navPoshold'):
+            print("\nComplete NAV_POSHOLD data:")
+            for key, value in board.navPoshold.items():
+                if key not in ['timestamp', 'elapsed', 'cmd']:
+                    print("  %s: %s" % (key, value))
         
-        # Test PID controller with current settings
-        print("\nCreating test PID controller with current settings...")
-        test_pid = PID()
-        
-        # Check hover_throttle value in PID controller
-        print("Hover_throttle value in created PID: %d" % test_pid.throttle.hover_throttle)
-        print("Deadband value in created PID: %d" % test_pid.throttle.deadband)
-        
-        # Create test case for PID controller
-        if altitude_data and 'estalt' in altitude_data:
-            current_height = altitude_data['estalt'] / 100.0  # convert from cm to m
-            
-            # Simulate PID step for current height
-            from three_dim_vec import Error
-            error = Error(0, 0, 0.65 - current_height)
-            
-            print("\nTesting PID controller with current height: %fm" % current_height)
-            print("Target height: 0.65m, error: %fm" % error.z)
-            
-            # Execute one step of PID controller
-            cmd = test_pid.step(error)
-            print("PID.step() result: %s" % cmd)
-            print("Throttle command: %d" % cmd[2])
-            
-            # For testing what happens if drone is on the ground
-            ground_error = Error(0, 0, 0.65 - 0.02)  # drone on ground, height 2cm
-            print("\nTesting with simulated drone on ground (height 2cm):")
-            ground_cmd = test_pid.step(ground_error)
-            print("PID.step() result for drone on ground: %s" % ground_cmd)
-            print("Throttle command: %d" % ground_cmd[2])
-            
+    except SerialException as e:
+        print("\nError connecting to flight controller: %s" % e)
+        print("Make sure the flight controller is connected to %s" % serial_port)
     except Exception as e:
         import traceback
-        print("Error during test execution: %s" % e)
+        print("\nError during execution: %s" % e)
         traceback.print_exc()
     finally:
         # Close connection to flight controller
         if 'board' in locals():
             board.close()
-            print("Connection to flight controller closed")
+            print("\nConnection to flight controller closed")
+        print("\n===== TEST COMPLETED =====")
 
 if __name__ == "__main__":
     main() 

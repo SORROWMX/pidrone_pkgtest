@@ -17,7 +17,7 @@ import command_values as cmds
 from sensor_msgs.msg import Imu
 from h2rMultiWii import MultiWii
 from serial import SerialException
-from std_msgs.msg import Header, Empty, Float32
+from std_msgs.msg import Header, Empty
 from geometry_msgs.msg import Quaternion
 from pidrone_pkg.msg import Battery, Mode, RC, State
 from sensor_msgs.msg import Range
@@ -33,7 +33,6 @@ class FlightController(object):
     /pidrone/imu
     /pidrone/battery
     /pidrone/mode
-    /pidrone/altitude
 
     Subscribers:
     /pidrone/fly_commands
@@ -84,11 +83,6 @@ class FlightController(object):
         self.cell_voltage_low = 3.7   # Low battery warning threshold per cell
         self.cell_voltage_critical = 3.5  # Critical battery threshold per cell
         
-        # Initialize altitude data
-        #########################
-        self.altitude = 0.0  # Current barometer altitude in meters
-        self.vario = 0.0     # Vertical velocity from barometer
-        
         # Accelerometer parameters
         ##########################
         print("loading")
@@ -128,17 +122,11 @@ class FlightController(object):
         """
         Compute the ROS IMU message by reading data from the board.
         """
-        # Get attitude, IMU data and altitude data in a single request
-        attitude_data, imu_data, altitude_data = self.board.getDataBulk([
+        # Get both attitude and IMU data in a single request
+        attitude_data, imu_data = self.board.getDataBulk([
             (MultiWii.ATTITUDE, []),
-            (MultiWii.RAW_IMU, []),
-            (MultiWii.ALTITUDE, [])
+            (MultiWii.RAW_IMU, [])
         ])
-
-        # Store altitude data if available
-        if hasattr(self.board, 'altitude'):
-            self.altitude = self.board.altitude['estalt'] / 100.0  # Convert to meters (INAV reports in cm)
-            self.vario = self.board.altitude['vario'] / 100.0 if 'vario' in self.board.altitude else 0.0  # Convert to m/s
 
         # Calculate values to update imu_message:
         roll = np.deg2rad(self.board.attitude['angx'])
@@ -413,13 +401,10 @@ def main():
     imupub = rospy.Publisher('/pidrone/imu', Imu, queue_size=1, tcp_nodelay=True)
     batpub = rospy.Publisher('/pidrone/battery', Battery, queue_size=1, tcp_nodelay=False)
     fc.modepub = rospy.Publisher('/pidrone/mode', Mode, queue_size=1, tcp_nodelay=False)
-    # New publisher for barometer altitude
-    altpub = rospy.Publisher('/pidrone/altitude', Float32, queue_size=1, tcp_nodelay=True)
     print('Publishing:')
     print('/pidrone/imu')
     print('/pidrone/mode')
     print('/pidrone/battery')
-    print('/pidrone/altitude')
 
     # Subscribers
     ############
@@ -457,8 +442,6 @@ def main():
         fc.update_imu_message()
         imupub.publish(fc.imu_message)
         batpub.publish(fc.battery_message)
-        # Publish barometer altitude data
-        altpub.publish(fc.altitude)
         
         r.sleep()
     
@@ -483,8 +466,6 @@ def main():
             fc.update_imu_message()
             imupub.publish(fc.imu_message)
             batpub.publish(fc.battery_message)
-            # Publish barometer altitude data
-            altpub.publish(fc.altitude)
 
             # update and send the flight commands to the board
             fc.update_command()

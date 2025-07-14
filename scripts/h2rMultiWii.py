@@ -399,19 +399,6 @@ class MultiWii:
                 return self.motor
             elif code == MultiWii.SET_RAW_RC:
                 return "Set Raw RC"
-            elif code == MultiWii.ALTITUDE:
-                temp = struct.unpack('<i', data[:4])[0]
-                if not hasattr(self, 'altitude'):
-                    self.altitude = {'estalt': 0, 'vario': 0, 'elapsed': 0, 'timestamp': 0}
-                self.altitude['estalt'] = temp / 100.0
-                
-                if len(data) >= 6:
-                    vario = struct.unpack('<h', data[4:6])[0]
-                    self.altitude['vario'] = vario / 100.0 
-                
-                self.altitude['elapsed'] = elapsed
-                self.altitude['timestamp'] = readTime
-                return self.altitude
             else:
                 print("No return error!: %d" % code)
                 raise
@@ -466,41 +453,3 @@ class MultiWii:
 
     def eepromWrite(self):
         self.send_raw_command(0, MultiWii.EEPROM_WRITE, [])
-
-    """
-    Получение значения hover_throttle через MSP_NAV_POSHOLD
-    """
-    def get_hover_throttle(self):
-        # Send MSP_NAV_POSHOLD command
-        print("Requesting hover_throttle value...")
-        self.send_raw_command(0, MultiWii.MSP_NAV_POSHOLD, [])
-        result = self.receiveDataPacket()
-        
-        if result and 'hover_throttle' in result:
-            print("Received hover_throttle value: %d" % result['hover_throttle'])
-            return result['hover_throttle']
-        else:
-            print("Failed to get hover_throttle value")
-            return None
-
-    """
-    Тестовая функция для получения hover_throttle
-    """
-    def test_get_hover_throttle(self):
-        hover_throttle = self.get_hover_throttle()
-        if hover_throttle is not None:
-            print("Test successful: hover_throttle = %d" % hover_throttle)
-            if hover_throttle >= 1000 and hover_throttle <= 2000:
-                print("Hover_throttle value is within valid range (1000-2000)")
-            else:
-                print("Warning: hover_throttle value is outside valid range (1000-2000)")
-        else:
-            print("Test failed: could not get hover_throttle")
-        
-        # Print all data received in response
-        print("Complete navPoshold data:")
-        for key, value in self.navPoshold.items():
-            print("  %s: %s" % (key, value))
-        
-        return hover_throttle
-
