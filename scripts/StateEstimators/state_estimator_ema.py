@@ -161,7 +161,7 @@ class EMAStateEstimator(object):
         # use an ema filter to smoothe the range reading
         smoothed_altitude= alpha * curr_altitude + (1 - alpha) * prev_altitude
         # ensure that the range value is between 0 and 0.55 m
-        smoothed_altitude = max(0, min(smoothed_altitude, 1.5))
+        smoothed_altitude = max(0, min(smoothed_altitude, 2))
         # update the current z position
         self.state.pose_with_covariance.pose.position.z = smoothed_altitude
 
