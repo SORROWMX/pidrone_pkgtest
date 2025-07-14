@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Тестовый скрипт для получения hover_throttle через MSP протокол
-и интеграции этого значения с PID контроллером.
+Test script for getting hover_throttle through MSP protocol
+and integrating this value with PID controller.
 """
 
 import sys
@@ -12,91 +12,91 @@ from h2rMultiWii import MultiWii
 from pid_class_new import PID, PIDaxis, HOVER_THROTTLE, DEADBAND
 
 def main():
-    # Инициализация ROS ноды
+    # Initialize ROS node
     rospy.init_node('test_hover_throttle', anonymous=True)
     
-    # Параметр serial_port может быть передан как аргумент командной строки
+    # Serial port can be passed as a command line argument
     if len(sys.argv) > 1:
         serial_port = sys.argv[1]
     else:
-        # По умолчанию используем /dev/ttyACM0
+        # Default to /dev/ttyACM0
         serial_port = '/dev/ttyACM0'
     
-    print(f"Подключение к полетному контроллеру через порт {serial_port}...")
+    print("Connecting to flight controller via port %s..." % serial_port)
     
     try:
-        # Инициализация подключения к полетному контроллеру
+        # Initialize connection to flight controller
         board = MultiWii(serial_port)
         
-        # Получение информации о версии прошивки
-        print("Запрос идентификатора контроллера...")
+        # Get firmware version information
+        print("Requesting controller identification...")
         ident = board.getData(MultiWii.IDENT)
-        print(f"Информация о контроллере: {ident}")
+        print("Controller information: %s" % ident)
         
-        # Получение текущего значения hover_throttle из INAV через MSP
-        print("\nЗапуск теста получения hover_throttle...")
+        # Get current hover_throttle value from INAV via MSP
+        print("\nStarting hover_throttle test...")
         hover_throttle_inav = board.test_get_hover_throttle()
         
-        # Получение текущего значения из настроек PID контроллера
-        print("\nТекущие значения в PID контроллере:")
-        print(f"HOVER_THROTTLE = {HOVER_THROTTLE}")
-        print(f"DEADBAND = {DEADBAND}")
+        # Get current value from PID controller settings
+        print("\nCurrent values in PID controller:")
+        print("HOVER_THROTTLE = %d" % HOVER_THROTTLE)
+        print("DEADBAND = %d" % DEADBAND)
         
-        # Проверка соответствия значений
+        # Check if values match
         if hover_throttle_inav is not None:
             if hover_throttle_inav == HOVER_THROTTLE:
-                print("\nЗначения совпадают: PID контроллер уже использует правильное значение hover_throttle")
+                print("\nValues match: PID controller already uses the correct hover_throttle value")
             else:
-                print("\nЗначения не совпадают:")
-                print(f"  - INAV hover_throttle: {hover_throttle_inav}")
-                print(f"  - PID hover_throttle: {HOVER_THROTTLE}")
-                print("\nРекомендуется обновить значение HOVER_THROTTLE в pid_class_new.py")
+                print("\nValues do not match:")
+                print("  - INAV hover_throttle: %d" % hover_throttle_inav)
+                print("  - PID hover_throttle: %d" % HOVER_THROTTLE)
+                print("\nRecommended to update HOVER_THROTTLE value in pid_class_new.py")
         
-        # Получение данных с датчиков высоты
-        print("\nЗапрос данных с барометра...")
+        # Get altitude sensor data
+        print("\nRequesting barometer data...")
         altitude_data = board.getData(MultiWii.ALTITUDE)
-        print(f"Данные высоты: {altitude_data}")
+        print("Altitude data: %s" % altitude_data)
         
-        # Тестирование работы PID контроллера с текущими настройками
-        print("\nСоздание тестового PID контроллера с текущими настройками...")
+        # Test PID controller with current settings
+        print("\nCreating test PID controller with current settings...")
         test_pid = PID()
         
-        # Проверка значения hover_throttle в PID контроллере
-        print(f"Значение hover_throttle в созданном PID: {test_pid.throttle.hover_throttle}")
-        print(f"Значение deadband в созданном PID: {test_pid.throttle.deadband}")
+        # Check hover_throttle value in PID controller
+        print("Hover_throttle value in created PID: %d" % test_pid.throttle.hover_throttle)
+        print("Deadband value in created PID: %d" % test_pid.throttle.deadband)
         
-        # Создание тестового примера для PID контроллера
+        # Create test case for PID controller
         if altitude_data and 'estalt' in altitude_data:
             current_height = altitude_data['estalt'] / 100.0  # convert from cm to m
             
-            # Симуляция PID шага для текущей высоты
+            # Simulate PID step for current height
             from three_dim_vec import Error
             error = Error(0, 0, 0.65 - current_height)
             
-            print(f"\nТестирование PID контроллера с текущей высотой: {current_height}м")
-            print(f"Целевая высота: 0.65м, ошибка: {error.z}м")
+            print("\nTesting PID controller with current height: %fm" % current_height)
+            print("Target height: 0.65m, error: %fm" % error.z)
             
-            # Выполняем один шаг PID контроллера
+            # Execute one step of PID controller
             cmd = test_pid.step(error)
-            print(f"Результат PID.step(): {cmd}")
-            print(f"Команда газа (throttle): {cmd[2]}")
+            print("PID.step() result: %s" % cmd)
+            print("Throttle command: %d" % cmd[2])
             
-            # Для тестирования, что будет если дрон на земле
-            ground_error = Error(0, 0, 0.65 - 0.02)  # дрон на земле, высота 2см
-            print("\nТестирование с симуляцией дрона на земле (высота 2см):")
+            # For testing what happens if drone is on the ground
+            ground_error = Error(0, 0, 0.65 - 0.02)  # drone on ground, height 2cm
+            print("\nTesting with simulated drone on ground (height 2cm):")
             ground_cmd = test_pid.step(ground_error)
-            print(f"Результат PID.step() для дрона на земле: {ground_cmd}")
-            print(f"Команда газа (throttle): {ground_cmd[2]}")
+            print("PID.step() result for drone on ground: %s" % ground_cmd)
+            print("Throttle command: %d" % ground_cmd[2])
             
     except Exception as e:
         import traceback
-        print(f"Ошибка при выполнении теста: {e}")
+        print("Error during test execution: %s" % e)
         traceback.print_exc()
     finally:
-        # Закрываем соединение с полетным контроллером
+        # Close connection to flight controller
         if 'board' in locals():
             board.close()
-            print("Соединение с полетным контроллером закрыто")
+            print("Connection to flight controller closed")
 
 if __name__ == "__main__":
     main() 
