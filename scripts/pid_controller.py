@@ -248,7 +248,7 @@ class PIDController(object):
             print("Reached landing target height: {:.3f}m".format(self.current_position.z))
             # Keep minimum throttle to maintain stability on the ground
             # but don't automatically disarm
-            return [1500, 1500, 1380, 1500]  # [roll, pitch, throttle, yaw]
+            return [1500, 1500, 1100, 1500]  # [roll, pitch, throttle, yaw]
         
         # Calculate elapsed time since landing started
         elapsed_time = curr_time - self.landing_start_time
