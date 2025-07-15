@@ -59,9 +59,6 @@ class FlightController(object):
         # store the time for angular velocity calculations
         self.time = rospy.Time.now()
         self.debug_output = False  # Set to True only when debugging
-        # Landing variables
-        self.landing_complete = False
-        self.landing_start_time = None
 
         # Initialize the Imu Message
         ############################
@@ -270,44 +267,11 @@ class FlightController(object):
         print("\nInitiating landing...")
         # Publish LAND command - PID controller will handle the landing sequence
         self.modepub.publish('LAND')
-        
-        # Set up landing monitoring
-        self.landing_complete = False
-        self.landing_start_time = rospy.Time.now()
-        max_landing_duration = 15.0  # Maximum time to wait for landing (seconds)
-        safe_height_threshold = 0.05  # Safe height to consider landing complete (meters)
-        check_interval = 0.5  # How often to check landing progress (seconds)
-        
-        # Monitor landing progress
-        while not self.landing_complete and not rospy.is_shutdown():
-            # Check if we've reached a safe height
-            if self.range is not None and self.range < safe_height_threshold:
-                print("Safe height reached: {:.2f}m".format(self.range))
-                self.landing_complete = True
-                break
-                
-            # Check if we've exceeded maximum landing time
-            elapsed_time = (rospy.Time.now() - self.landing_start_time).to_sec()
-            if elapsed_time > max_landing_duration:
-                print("Landing timeout ({:.1f}s)".format(elapsed_time))
-                break
-                
-            # Check if mode has changed to DISARMED (PID controller completed landing)
-            if self.curr_mode == 'DISARMED':
-                self.landing_complete = True
-                break
-                
-            # Print status every 2 seconds instead of every second
-            if int(elapsed_time / 2) > int((elapsed_time - check_interval) / 2):
-                print("Height: {:.2f}m, Time: {:.1f}s".format(self.range, elapsed_time))
-                
-            # Wait before checking again
-            rospy.sleep(check_interval)
-        
-        # Only print landing complete message, don't force disarm
-        # Let the PID controller handle the landing and disarming
-        print("Landing process completed")
-        sys.exit()
+        # Wait briefly to ensure message is published
+        rospy.sleep(0.5)
+        print("Landing sequence initiated. Press Ctrl+C again to force exit.")
+        # Don't exit immediately to allow landing to start
+        # The user can press Ctrl+C again to force exit if needed
 
     # Heartbeat Callbacks: These update the last time that data was received
     #                       from a node

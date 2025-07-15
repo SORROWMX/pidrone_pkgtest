@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 import rospy
 
@@ -167,6 +168,10 @@ class PIDaxis():
             
             # Limit throttle range during landing
             throttle = max(1100, min(throttle, 1250))
+            
+            # Print throttle info less frequently during landing
+            if int(rospy.get_time() * 2) != int((rospy.get_time() - 0.1) * 2):
+                print("Landing - Throttle: %d" % throttle)
         else:
             # Improved throttle control for normal flight
             # Create a gradual transition zone around target height (0.05m)
@@ -333,5 +338,20 @@ class PID:
         return [cmd_r, cmd_p, cmd_t, cmd_y]
         
     def set_landing_mode(self, is_landing):
-        """Set landing mode flag for throttle controller"""
+        """
+        Set landing mode flag for throttle controller
+        
+        When landing mode is activated:
+        1. The throttle controller will gradually reduce altitude
+        2. When close to the ground, it will further reduce throttle
+        
+        Args:
+            is_landing (bool): True to enable landing mode, False to disable
+        """
+        # Set landing mode flag in throttle controller
         self.throttle.landing_mode = is_landing
+        
+        # Reset integral terms when entering landing mode to prevent oscillations
+        if is_landing:
+            self.throttle.height_integral = 0
+            print("Landing mode activated - descending to ground")
