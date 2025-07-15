@@ -267,13 +267,12 @@ class PIDController(object):
         # Override desired position Z with calculated target height
         self.desired_position.z = target_height
         
-        # Calculate Z error for PID
+        # Calculate error for PID
+        self.calc_error()
+        
+        # Only override Z error, keep X and Y errors for position holding
         dz = self.desired_position.z - self.current_position.z
         self.pid_error.z = dz * 100  # Convert to cm for PID
-        
-        # Zero out X and Y velocity errors during landing
-        self.pid_error.x = 0
-        self.pid_error.y = 0
         
         # Use PID to generate throttle command with zero yaw velocity
         return self.pid.step(self.pid_error, 0)
