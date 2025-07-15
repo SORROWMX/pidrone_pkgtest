@@ -68,8 +68,10 @@ class PIDaxis():
         # Special handling for throttle controller with improved height control logic
         if self.is_throttle_controller:
             if self.landing_mode:
+                # Use the passed height error directly rather than forcing desired_height to 0
+                # This allows pid_controller.py to control the descent rate
                 current_height = -err/100.0  # Convert from cm to m
-                desired_height = 0  
+                desired_height = current_height  # Will be overridden by the target from pid_controller
             else:
                 current_height = self.target_height - err/100.0  # Convert from cm to m
                 desired_height = self.target_height
@@ -154,20 +156,41 @@ class PIDaxis():
         
         # Special handling for landing mode
         if self.landing_mode:
-            # Gentler descent during landing
-            base_throttle = 1220  # Lower base throttle for landing (adjusted for 1300 hover)
-            gain = 0.5  # Reduced gain for smoother landing
+            # Calculate throttle reduction based on height
+            # The closer to the ground, the more we reduce throttle
+            throttle_reduction = 0
+            
+            # Start with a small reduction (5% of hover_throttle)
+            base_reduction = int(self.hover_throttle * 0.05)
+            
+            # Increase reduction as we get closer to the ground
+            if current_height < 0.4:  # Below 40cm
+                # Linear interpolation: 5% at 40cm to 15% at ground level
+                reduction_factor = 0.05 + (0.4 - current_height) / 0.4 * 0.1
+                throttle_reduction = int(self.hover_throttle * reduction_factor)
             
             # When very close to the ground, reduce throttle further
+            if current_height < 0.15:  # Below 15cm
+                # Increase to 20% reduction when very close to ground
+                reduction_factor = 0.15 + (0.15 - current_height) / 0.15 * 0.05
+                throttle_reduction = int(self.hover_throttle * reduction_factor)
+                
+            
+            # Calculate base throttle by reducing from hover throttle
+            base_throttle = self.hover_throttle - throttle_reduction
+            
+            # Reduce PID gain during landing for smoother descent
+            gain = 0.5
             if current_height < 0.15:
-                base_throttle = 1180
                 gain = 0.4
                 
             throttle_adjustment = p_term + i_term + d_term
             throttle = base_throttle + int(throttle_adjustment * gain)
             
-            # Limit throttle range during landing
-            throttle = max(1100, min(throttle, 1250))
+            # Ensure throttle doesn't go below minimum or above a safe maximum during landing
+            min_throttle = 1100
+            max_throttle = self.hover_throttle - base_reduction  # Don't go above hover_throttle - small reduction
+            throttle = max(min_throttle, min(throttle, max_throttle))
             
             # Print throttle info less frequently during landing
             if int(rospy.get_time() * 2) != int((rospy.get_time() - 0.1) * 2):
