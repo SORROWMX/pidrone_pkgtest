@@ -15,7 +15,9 @@ print("done tf import")
 
 import command_values as cmds
 from sensor_msgs.msg import Imu
-from h2rMultiWii import MultiWii
+from inavmspapi import MultirotorControl
+from inavmspapi.transmitter import SerialTransmitter
+from inavmspapi.rangefinder import RangefinderManager
 from serial import SerialException
 from std_msgs.msg import Header, Empty
 from geometry_msgs.msg import Quaternion
@@ -48,6 +50,8 @@ class FlightController(object):
         print("getboard")
         self.board = self.getBoard()
         print("done")
+        # Initialize rangefinder manager
+        self.rangefinder = RangefinderManager(self.board)
         # stores the current and previous modes
         self.curr_mode = 'DISARMED'         #initialize as disarmed
         self.prev_mode = 'DISARMED'         #initialize as disarmed
@@ -119,16 +123,16 @@ class FlightController(object):
         """
         Compute the ROS IMU message by reading data from the board.
         """
-        # Get both attitude and IMU data in a single request
-        attitude_data, imu_data = self.board.getDataBulk([
-            (MultiWii.ATTITUDE, []),
-            (MultiWii.RAW_IMU, [])
-        ])
+        # Get attitude data
+        self.board.fast_read_attitude()
+        
+        # Get IMU data
+        self.board.fast_read_imu()
 
         # Calculate values to update imu_message:
-        roll = np.deg2rad(self.board.attitude['angx'])
-        pitch = -np.deg2rad(self.board.attitude['angy'])
-        heading = np.deg2rad(self.board.attitude['heading'])
+        roll = np.deg2rad(self.board.SENSOR_DATA['kinematics'][0])
+        pitch = -np.deg2rad(self.board.SENSOR_DATA['kinematics'][1])
+        heading = np.deg2rad(self.board.SENSOR_DATA['kinematics'][2])
         
         # Transform heading to standard math conventions
         heading = (-heading) % (2 * np.pi)
@@ -152,9 +156,9 @@ class FlightController(object):
         self.quaternion_buffer[:] = quaternion  # Copy to pre-allocated buffer
         
         # Calculate the linear accelerations
-        lin_acc_x = self.board.rawIMU['ax'] * self.accRawToMss - self.accZeroX
-        lin_acc_y = self.board.rawIMU['ay'] * self.accRawToMss - self.accZeroY
-        lin_acc_z = self.board.rawIMU['az'] * self.accRawToMss - self.accZeroZ
+        lin_acc_x = self.board.SENSOR_DATA['accelerometer'][0] * self.accRawToMss - self.accZeroX
+        lin_acc_y = self.board.SENSOR_DATA['accelerometer'][1] * self.accRawToMss - self.accZeroY
+        lin_acc_z = self.board.SENSOR_DATA['accelerometer'][2] * self.accRawToMss - self.accZeroZ
 
         # Rotate the IMU frame to align with our convention
         lin_acc_x_drone_body = -lin_acc_y
@@ -199,11 +203,11 @@ class FlightController(object):
         Compute the ROS battery message by reading data from the board.
         Also detect battery type based on voltage.
         """
-        # extract vbat, amperage
-        self.board.getData(MultiWii.ANALOG)
+        # Get analog data (battery)
+        self.board.fast_read_analog()
     
-        self.battery_message.vbat = self.board.analog['vbat']
-        self.battery_message.amperage = self.board.analog['amperage']
+        self.battery_message.vbat = self.board.ANALOG['voltage']
+        self.battery_message.amperage = self.board.ANALOG['amperage']
         
         # Auto-detect battery type if not yet determined
         if self.battery_cells == 0 and self.battery_message.vbat > 0:
@@ -233,26 +237,33 @@ class FlightController(object):
     #################
     def getBoard(self):
         """ Connect to the flight controller board """
-        # (if the flight cotroll usb is unplugged and plugged back in,
-        #  it becomes .../USB1)
+        # Try to connect to the flight controller board
         try:
-            board = MultiWii('/dev/ttyACM0')
+            transmitter = SerialTransmitter('/dev/ttyACM0')
+            board = MultirotorControl(transmitter)
+            if board.connect():
+                return board
+            else:
+                raise SerialException("Failed to connect to /dev/ttyACM0")
         except SerialException as e:
             print(("usb0 failed: " + str(e)))
             try:
-                board = MultiWii('/dev/ttyACM1')
+                transmitter = SerialTransmitter('/dev/ttyACM1')
+                board = MultirotorControl(transmitter)
+                if board.connect():
+                    return board
+                else:
+                    raise SerialException("Failed to connect to /dev/ttyACM1")
             except SerialException:
                 print('\nCannot connect to the flight controller board.')
                 print('The USB is unplugged. Please check connection.')
                 raise
                 sys.exit()
-        return board
 
     def send_rc_cmd(self):
         """ Send commands to the flight controller board """
         assert len(self.command) is 8, "COMMAND HAS WRONG SIZE, expected 8, got "+str(len(self.command))
-        self.board.send_raw_command(8, MultiWii.SET_RAW_RC, self.command)
-        self.board.receiveDataPacket()
+        self.board.fast_msp_rc_cmd(self.command)
         if (self.command != self.last_command):
             if self.debug_output:
                 print('new command sent:', self.command)
@@ -284,9 +295,13 @@ class FlightController(object):
         self.heartbeat_pid_controller = rospy.Time.now()
 
     def heartbeat_infrared_callback(self, msg):
-        """Update ir sensor heartbeat"""
+        """Update ir sensor heartbeat and send range data to flight controller"""
         self.heartbeat_infrared = rospy.Time.now()
         self.range = msg.range
+        
+        # Send range data to the flight controller
+        if self.range is not None and self.range > 0:
+            self.rangefinder.send_range(self.range)
 
     def shouldIDisarm(self):
         """
@@ -450,8 +465,11 @@ def main():
     finally:
         print('Shutdown received')
         print('Sending DISARM command')
-        fc.board.send_raw_command(8, MultiWii.SET_RAW_RC, cmds.disarm_cmd)
-        fc.board.receiveDataPacket()
+        if hasattr(fc, 'board') and fc.board:
+            fc.board.send_RAW_RC(cmds.disarm_cmd)
+        print('Disconnecting from board')
+        if hasattr(fc, 'board') and fc.board:
+            fc.board.__exit__()
 
 
 if __name__ == '__main__':
