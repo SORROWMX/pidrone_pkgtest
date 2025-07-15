@@ -504,6 +504,40 @@ def main(ControllerClass):
     rospy.Subscriber('/pidrone/reset_transform', Empty, pid_controller.reset_callback)
     rospy.Subscriber('/pidrone/picamera/lost', Bool, pid_controller.lost_callback)
 
+    # Wait for state estimator data before proceeding
+    print('Waiting for state estimator data...')
+    # Add a flag to track if we've received state data
+    pid_controller.received_state_data = False
+    
+    # Define a callback just for checking if state data is available
+    def state_check_callback(msg):
+        pid_controller.received_state_data = True
+        # Once we've confirmed data is flowing, we can unregister this callback
+        state_check_sub.unregister()
+    
+    # Create a temporary subscriber to check for state data
+    state_check_sub = rospy.Subscriber('/pidrone/state', State, state_check_callback)
+    
+    # Wait until we receive state data or the node is shutdown
+    wait_rate = rospy.Rate(10)  # Check at 10Hz
+    wait_start_time = rospy.Time.now()
+    dots = 0
+    
+    while not pid_controller.received_state_data and not rospy.is_shutdown():
+        # Print a progress indicator
+        elapsed_time = (rospy.Time.now() - wait_start_time).to_sec()
+        if int(elapsed_time) % 2 == 0 and int(elapsed_time) != int(elapsed_time - 0.1):
+            dots = (dots + 1) % 4
+            dot_str = '.' * dots + ' ' * (3 - dots)
+            print("Waiting for state estimator data{}".format(dot_str), end="\r")
+        wait_rate.sleep()
+    
+    if pid_controller.received_state_data:
+        print("\nState estimator data received. Starting PID controller.")
+    else:
+        print("\nShutdown requested before state data was received.")
+        return
+
     # Non-ROS Setup
     ###############
     # set up ctrl-c handler
