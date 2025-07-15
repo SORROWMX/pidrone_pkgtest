@@ -127,6 +127,20 @@ class PIDaxis():
             self.current_vel_z = (current_height - self.previous_height) / dt
         self.previous_height = current_height
         
+        base_hover_throttle = 1300
+        
+        if abs(current_height - self.target_height) > 0.05:
+            height_diff = self.target_height - current_height
+            throttle_adjustment = int(height_diff * -40)  
+            dynamic_hover_throttle = base_hover_throttle + throttle_adjustment
+            dynamic_hover_throttle = max(1280, min(dynamic_hover_throttle, 1340))
+            
+            if abs(dynamic_hover_throttle - self.hover_throttle) > 3:
+                self.hover_throttle += (1 if dynamic_hover_throttle > self.hover_throttle else -1) * 3
+            
+            if not self.landing_mode:
+                print("Adjusted hover_throttle: %d for height %.2fm" % (self.hover_throttle, current_height))
+        
         if not self.landing_mode:
             print("Height: %.2fm, Target: %.2fm, Error: %.2fm, Vel_Z: %.2fm/s" % 
                   (current_height, desired_height, height_error, self.current_vel_z))
@@ -170,7 +184,7 @@ class PIDaxis():
         else:
             pid_output = p_term + i_term + d_term
             
-            if abs(pid_output) < 0.10: 
+            if abs(pid_output) < 0.05: 
                 throttle = self.hover_throttle
             else:
                 scaled_output = int(pid_output * 150) 
