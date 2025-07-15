@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 import rospy
 
@@ -11,7 +12,7 @@ KI = 0.15   # Reduced to prevent oscillation
 KD = 60.0   # Reduced for less aggressive response
 
 #####################################################
-#						PID							#
+#                       PID                         #
 #####################################################
 class PIDaxis():
     def __init__(self, kp, ki, kd, i_range=None, d_range=None, control_range=(1000, 2000), midpoint=1500, smoothing=True):
