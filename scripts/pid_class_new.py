@@ -40,7 +40,9 @@ class PIDaxis():
         self.hover_throttle = 1300  # Default value, will be overridden in PID class
         self.deadband = 50          # Default value, will be overridden in PID class
         self.target_vel_z = 0.0       
-        self.current_vel_z = 0.0     
+        self.current_vel_z = 0.0
+        # Add target_height attribute with default value
+        self.target_height = 0.65  # Default value, will be overridden in PID class
         
     def reset(self):
         self._old_err = None
@@ -168,7 +170,7 @@ class PIDaxis():
         else:
             pid_output = p_term + i_term + d_term
             
-            if abs(pid_output) < 0.05: 
+            if abs(pid_output) < 0.10: 
                 throttle = self.hover_throttle
             else:
                 scaled_output = int(pid_output * 150) 
@@ -190,11 +192,11 @@ class PID:
     def __init__(self,
                  # Default PID parameters that were previously at the top of the file
                  target_height=0.65,
-                 kp=0.8,      # Changed from 80.0/100
+                 kp=0.7,      # Changed from 80.0/100
                  ki=0.0015,   # Changed from 0.15/100
-                 kd=0.6,      # Changed from 60.0/100
+                 kd=0.65,      # Changed from 60.0/100
                  hover_throttle=1300,
-                 deadband=50,
+                 deadband=30,
 
                  roll=PIDaxis(2.0, 1.0, 0.0, control_range=(1400, 1600), midpoint=1500, i_range=(-100, 100)),
                  roll_low=PIDaxis(0.0, 0.5, 0.0, control_range=(1400, 1600), midpoint=1500, i_range=(-150, 150)),
@@ -233,6 +235,8 @@ class PID:
         # Set hover throttle and deadband values
         self.throttle.hover_throttle = hover_throttle
         self.throttle.deadband = deadband
+        # Set target height in throttle controller
+        self.throttle.target_height = target_height
             
         # Mark throttle controller for special handling
         self.throttle.is_throttle_controller = True
