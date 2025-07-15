@@ -113,9 +113,6 @@ class PIDController(object):
         self.landing_start_height = None
         self.landing_descent_rate = 0.05  # meters per second
         self.landing_target_height = 0.05  # meters
-        self.landing_complete = False
-        self.landing_disarm_delay = 1.0  # seconds
-        self.landing_disarm_time = None
 
     # ROS SUBSCRIBER CALLBACK METHODS
     #################################
@@ -246,28 +243,12 @@ class PIDController(object):
         """ Special step function for landing mode """
         curr_time = rospy.get_time()
         
-        # If landing is complete, disarm after delay
-        if self.landing_complete:
-            if self.landing_disarm_time is None:
-                self.landing_disarm_time = curr_time
-            
-            if curr_time - self.landing_disarm_time > self.landing_disarm_delay:
-                print("Landing complete, disarming now")
-                self.modepub.publish('DISARMED')
-                # Reset landing state
-                self.landing = False
-                self.landing_complete = False
-                self.landing_disarm_time = None
-                self.pid.set_landing_mode(False)
-                
-            # Keep minimum throttle while waiting to disarm
-            return [1500, 1500, 1380, 1500]  # [roll, pitch, throttle, yaw]
-        
         # Check if we've reached landing target height
         if self.current_position.z <= self.landing_target_height:
             print("Reached landing target height: {:.3f}m".format(self.current_position.z))
-            self.landing_complete = True
-            return [1500, 1500, 1380, 1500]  # Minimum throttle
+            # Keep minimum throttle to maintain stability on the ground
+            # but don't automatically disarm
+            return [1500, 1500, 1380, 1500]  # [roll, pitch, throttle, yaw]
         
         # Calculate elapsed time since landing started
         elapsed_time = curr_time - self.landing_start_time
@@ -303,10 +284,8 @@ class PIDController(object):
         """ Initialize landing sequence """
         print("\n=== STARTING LANDING SEQUENCE ===")
         self.landing = True
-        self.landing_complete = False
         self.landing_start_time = rospy.get_time()
         self.landing_start_height = self.current_position.z
-        self.landing_disarm_time = None
         
         # Disable position control during landing
         self.position_control = False
@@ -438,8 +417,6 @@ class PIDController(object):
         self.fb_pid.reset()
         # reset landing state
         self.landing = False
-        self.landing_complete = False
-        self.landing_disarm_time = None
         # Reset landing mode in PID controller
         self.pid.set_landing_mode(False)
 
