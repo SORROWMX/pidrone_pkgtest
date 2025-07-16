@@ -1,0 +1,25 @@
+<launch>
+  <!-- Altitude controller parameters -->
+  <arg name="serial_port" default="/dev/ttyACM0"/>
+  <arg name="baudrate" default="115200"/>
+  <arg name="target_altitude" default="1.0"/>
+  
+  <!-- Launch the altitude controller node -->
+  <node name="altitude_controller" pkg="pidrone_pkg" type="test_msp2_altitude_control.py" output="screen">
+    <param name="serial_port" value="$(arg serial_port)"/>
+    <param name="baudrate" value="$(arg baudrate)"/>
+    <param name="target_altitude" value="$(arg target_altitude)"/>
+  </node>
+  
+  <!-- Optionally launch the client for interactive testing -->
+  <arg name="launch_client" default="true"/>
+  <group if="$(arg launch_client)">
+    <node name="altitude_control_client" pkg="pidrone_pkg" type="test_msp2_altitude_control_client.py" output="screen"/>
+  </group>
+  
+  <!-- Make sure the client node has executable permissions -->
+  <!-- Run the following commands before using this launch file:
+       chmod +x scripts/test_msp2_altitude_control.py
+       chmod +x scripts/test_msp2_altitude_control_client.py
+  -->
+</launch> 
