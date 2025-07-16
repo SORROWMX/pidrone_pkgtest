@@ -1,0 +1,11 @@
+<launch>
+    <!-- Launch the VL53L1X ToF sensor node -->
+    <include file="$(find pidrone_pkg)/launch/tof.launch" />
+    
+    <!-- Launch the rangefinder relay node -->
+    <node pkg="pidrone_pkg" type="test_msp2_sensor_range.py" name="rangefinder_relay" output="screen">
+        <param name="serial_port" value="/dev/ttyACM0" />
+        <param name="baudrate" value="115200" />
+        <param name="update_rate" value="40" />
+    </node>
+</launch> 

@@ -1,0 +1,8 @@
+<launch>
+    <!-- Launch the optical flow relay node -->
+    <node pkg="pidrone_pkg" type="test_msp2_optical_flow.py" name="optical_flow_relay" output="screen">
+        <param name="serial_port" value="/dev/ttyACM0" />
+        <param name="baudrate" value="115200" />
+        <param name="update_rate" value="40" />
+    </node>
+</launch> 
