@@ -1,7 +1,8 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import traceback
 import sys
 import yaml
+import asyncio
 
 import rospy
 import rospkg
@@ -12,18 +13,17 @@ print("tf import")
 import tf
 print("done tf import")
 
-
 import command_values as cmds
 from sensor_msgs.msg import Imu
-from inavmspapi import MultirotorControl
-from inavmspapi.transmitter import SerialTransmitter
-from inavmspapi.rangefinder import RangefinderManager
 from serial import SerialException
 from std_msgs.msg import Header, Empty
 from geometry_msgs.msg import Quaternion
 from pidrone_pkg.msg import Battery, Mode, RC, State
 from sensor_msgs.msg import Range
 import os
+
+from unavlib.control import UAVControl
+from unavlib.modules.utils import inavutil
 
 
 class FlightController(object):
@@ -47,11 +47,8 @@ class FlightController(object):
 
     def __init__(self):
         # Connect to the flight controller board
-        print("getboard")
-        self.board = self.getBoard()
-        print("done")
-        # Initialize rangefinder manager
-        self.rangefinder = RangefinderManager(self.board)
+        print("initializing uNAVlib")
+        self.uav = None  # Will be initialized in connect_to_board
         # stores the current and previous modes
         self.curr_mode = 'DISARMED'         #initialize as disarmed
         self.prev_mode = 'DISARMED'         #initialize as disarmed
@@ -63,7 +60,8 @@ class FlightController(object):
         # store the time for angular velocity calculations
         self.time = rospy.Time.now()
         self.debug_output = False  # Set to True only when debugging
-
+        self.loop_task = None  # Store the asyncio task
+        
         # Initialize the Imu Message
         ############################
         header = Header()
@@ -90,14 +88,36 @@ class FlightController(object):
         rospack = rospkg.RosPack()
         path = rospack.get_path('pidrone_pkg')
         with open("%s/params/multiwii.yaml" % path) as f:
-            means = yaml.load(f)
+            means = yaml.load(f, Loader=yaml.SafeLoader)
         print("done")
         self.accRawToMss = 9.8 / means["az"]
         self.accZeroX = means["ax"] * self.accRawToMss
         self.accZeroY = means["ay"] * self.accRawToMss
         self.accZeroZ = means["az"] * self.accRawToMss
         self.quaternion_buffer = np.zeros(4)  # Pre-allocate buffer for quaternion
+        
+        # Connect to the board
+        self.connect_to_board()
 
+    async def connect_to_board(self):
+        """Connect to the flight controller board using uNAVlib"""
+        try:
+            # Try first USB port
+            self.uav = UAVControl(device='/dev/ttyACM0', baudrate=115200, platform="MULTICOPTER")
+            self.uav.msp_override_channels = [1, 2, 3, 4, 5]  # Enable MSP override for essential channels
+            await self.uav.connect()
+            print("Connected to flight controller on /dev/ttyACM0")
+        except SerialException:
+            try:
+                # Try second USB port
+                self.uav = UAVControl(device='/dev/ttyACM1', baudrate=115200, platform="MULTICOPTER")
+                self.uav.msp_override_channels = [1, 2, 3, 4, 5]  # Enable MSP override for essential channels
+                await self.uav.connect()
+                print("Connected to flight controller on /dev/ttyACM1")
+            except SerialException:
+                print('\nCannot connect to the flight controller board.')
+                print('The USB is unplugged. Please check connection.')
+                raise
 
     # ROS subscriber callback methods:
     ##################################
@@ -116,23 +136,26 @@ class FlightController(object):
             t = msg.throttle
             self.command = [r, p, t, y] + cmds.idle_cmd[4:8]
 
-
     # Update methods:
     #################
-    def update_imu_message(self):
+    async def update_imu_message(self):
         """
         Compute the ROS IMU message by reading data from the board.
         """
         # Get attitude data
-        self.board.fast_read_attitude()
-        
+        attitude_data = self.uav.get_attitude()
+        if not attitude_data:
+            return
+            
         # Get IMU data
-        self.board.fast_read_imu()
-
+        imu_data = self.uav.get_imu()
+        if not imu_data:
+            return
+            
         # Calculate values to update imu_message:
-        roll = np.deg2rad(self.board.SENSOR_DATA['kinematics'][0])
-        pitch = -np.deg2rad(self.board.SENSOR_DATA['kinematics'][1])
-        heading = np.deg2rad(self.board.SENSOR_DATA['kinematics'][2])
+        roll = np.deg2rad(attitude_data['roll'])
+        pitch = -np.deg2rad(attitude_data['pitch'])  # Negative to match previous convention
+        heading = np.deg2rad(attitude_data['heading'])
         
         # Transform heading to standard math conventions
         heading = (-heading) % (2 * np.pi)
@@ -156,9 +179,9 @@ class FlightController(object):
         self.quaternion_buffer[:] = quaternion  # Copy to pre-allocated buffer
         
         # Calculate the linear accelerations
-        lin_acc_x = self.board.SENSOR_DATA['accelerometer'][0] * self.accRawToMss - self.accZeroX
-        lin_acc_y = self.board.SENSOR_DATA['accelerometer'][1] * self.accRawToMss - self.accZeroY
-        lin_acc_z = self.board.SENSOR_DATA['accelerometer'][2] * self.accRawToMss - self.accZeroZ
+        lin_acc_x = imu_data['accX'] * self.accRawToMss - self.accZeroX
+        lin_acc_y = imu_data['accY'] * self.accRawToMss - self.accZeroY
+        lin_acc_z = imu_data['accZ'] * self.accRawToMss - self.accZeroZ
 
         # Rotate the IMU frame to align with our convention
         lin_acc_x_drone_body = -lin_acc_y
@@ -198,16 +221,19 @@ class FlightController(object):
         self.imu_message.linear_acceleration.y = lin_acc_y_drone_body
         self.imu_message.linear_acceleration.z = lin_acc_z_drone_body
 
-    def update_battery_message(self):
+    async def update_battery_message(self):
         """
         Compute the ROS battery message by reading data from the board.
         Also detect battery type based on voltage.
         """
-        # Get analog data (battery)
-        self.board.fast_read_analog()
-    
-        self.battery_message.vbat = self.board.ANALOG['voltage']
-        self.battery_message.amperage = self.board.ANALOG['amperage']
+        # Get analog data using uNAVlib
+        analog_data = self.uav.std_send(inavutil.msp.MSP_ANALOG)
+        if not analog_data:
+            return
+            
+        # Update battery message
+        self.battery_message.vbat = self.uav.board.ANALOG['vbat'] / 10.0  # Convert to volts
+        self.battery_message.amperage = self.uav.board.ANALOG['amperage'] / 100.0  # Convert to amps
         
         # Auto-detect battery type if not yet determined
         if self.battery_cells == 0 and self.battery_message.vbat > 0:
@@ -235,40 +261,6 @@ class FlightController(object):
 
     # Helper Methods:
     #################
-    def getBoard(self):
-        """ Connect to the flight controller board """
-        # Try to connect to the flight controller board
-        try:
-            transmitter = SerialTransmitter('/dev/ttyACM0')
-            board = MultirotorControl(transmitter)
-            if board.connect():
-                return board
-            else:
-                raise SerialException("Failed to connect to /dev/ttyACM0")
-        except SerialException as e:
-            print(("usb0 failed: " + str(e)))
-            try:
-                transmitter = SerialTransmitter('/dev/ttyACM1')
-                board = MultirotorControl(transmitter)
-                if board.connect():
-                    return board
-                else:
-                    raise SerialException("Failed to connect to /dev/ttyACM1")
-            except SerialException:
-                print('\nCannot connect to the flight controller board.')
-                print('The USB is unplugged. Please check connection.')
-                raise
-                sys.exit()
-
-    def send_rc_cmd(self):
-        """ Send commands to the flight controller board """
-        assert len(self.command) is 8, "COMMAND HAS WRONG SIZE, expected 8, got "+str(len(self.command))
-        self.board.fast_msp_rc_cmd(self.command)
-        if (self.command != self.last_command):
-            if self.debug_output:
-                print('new command sent:', self.command)
-            self.last_command = self.command
-
     def near_zero(self, n):
         """ Set a number to zero if it is below a threshold value """
         return 0 if abs(n) < 0.0001 else n
@@ -295,13 +287,9 @@ class FlightController(object):
         self.heartbeat_pid_controller = rospy.Time.now()
 
     def heartbeat_infrared_callback(self, msg):
-        """Update ir sensor heartbeat and send range data to flight controller"""
+        """Update ir sensor heartbeat"""
         self.heartbeat_infrared = rospy.Time.now()
         self.range = msg.range
-        
-        # Send range data to the flight controller
-        if self.range is not None and self.range > 0:
-            self.rangefinder.send_range(self.range)
 
     def shouldIDisarm(self):
         """
@@ -358,15 +346,92 @@ class FlightController(object):
         ir_online = curr_time - self.heartbeat_infrared <= heartbeat_timeout
         
         return pid_online, state_online, ir_online
+        
+    async def send_rc_cmd(self):
+        """ Send commands to the flight controller board using uNAVlib """
+        assert len(self.command) is 8, "COMMAND HAS WRONG SIZE, expected 8, got "+str(len(self.command))
+        
+        # Map command values to RC channels - using only essential channels for multicopter
+        self.uav.set_rc_channel("roll", self.command[0])      # Roll - channel 1
+        self.uav.set_rc_channel("pitch", self.command[1])     # Pitch - channel 2
+        self.uav.set_rc_channel("throttle", self.command[2])  # Throttle - channel 3
+        self.uav.set_rc_channel("yaw", self.command[3])       # Yaw - channel 4
+        self.uav.set_rc_channel("aux1", self.command[4])      # AUX1 (arm/modes) - channel 5
+        
+        # No need to send aux2, aux3, aux4 as we're only overriding channels 1-5
+        
+        if (self.command != self.last_command):
+            if self.debug_output:
+                print('new command sent:', self.command)
+            self.last_command = self.command
+            
+    async def arm_disarm(self):
+        """Arm or disarm the drone based on current mode"""
+        if self.curr_mode == 'DISARMED':
+            self.uav.set_mode("ARM", on=False)
+        elif self.curr_mode == 'ARMED' and self.prev_mode == 'DISARMED':
+            self.uav.arm_enable_check()
+            self.uav.set_mode("ARM", on=True)
+            
+    async def main_loop(self, imupub, batpub):
+        """Main control loop for the flight controller"""
+        try:
+            while not rospy.is_shutdown():
+                # Check if we should disarm due to extreme critical conditions
+                if self.shouldIDisarm():
+                    print("Critical condition detected. Disarming.")
+                    self.curr_mode = 'DISARMED'
+                    await self.arm_disarm()
+                    self.modepub.publish(self.curr_mode)
+                    break
+                    
+                # Check battery and initiate landing if needed
+                if self.check_battery() and self.curr_mode == 'FLYING':
+                    print("Low battery detected. Initiating landing sequence.")
+                    self.modepub.publish('LAND')
+                    
+                # update and publish flight controller readings
+                await self.update_battery_message()
+                await self.update_imu_message()
+                imupub.publish(self.imu_message)
+                batpub.publish(self.battery_message)
+
+                # update and send the flight commands to the board
+                self.update_command()
+                await self.send_rc_cmd()
+                
+                # Handle arming/disarming
+                await self.arm_disarm()
+
+                # publish the current mode of the drone
+                self.modepub.publish(self.curr_mode)
+
+                # sleep for the remainder of the loop time (60Hz)
+                await asyncio.sleep(1/60.0)
+                
+        except SerialException:
+            print('\nCannot connect to the flight controller board.')
+            print('The USB is unplugged. Please check connection.')
+        except Exception as e:
+            print('there was an internal error', e)
+            print(traceback.format_exc())
+        finally:
+            print('Shutdown received')
+            print('Sending DISARM command')
+            if self.uav and self.uav.connected:
+                self.uav.set_mode("ARM", on=False)
+                await asyncio.sleep(0.1)  # Give it time to send the command
+                self.uav.stop()
 
 
-def main():
+async def main():
     # ROS Setup
     ###########
     node_name = os.path.splitext(os.path.basename(__file__))[0]
     print("init")
     rospy.init_node(node_name)
     print("done")
+    
     # create the FlightController object
     fc = FlightController()
     curr_time = rospy.Time.now()
@@ -396,9 +461,6 @@ def main():
 
     signal.signal(signal.SIGINT, fc.ctrl_c_handler)
     
-    # set the loop rate (Hz)
-    r = rospy.Rate(60)
-    
     # Wait for all components to come online before starting
     print("Waiting for all components to come online...")
     while not rospy.is_shutdown():
@@ -417,60 +479,17 @@ def main():
                   ("IR sensor " if not ir_online else ""))
         
         # Still publish IMU and battery data while waiting
-        fc.update_battery_message()
-        fc.update_imu_message()
+        await fc.update_battery_message()
+        await fc.update_imu_message()
         imupub.publish(fc.imu_message)
         batpub.publish(fc.battery_message)
         
-        r.sleep()
+        await asyncio.sleep(1/60.0)
     
-    try:
-        while not rospy.is_shutdown():
-            # Check if we should disarm due to extreme critical conditions
-            if fc.shouldIDisarm():
-                print("Critical condition detected. Disarming.")
-                fc.curr_mode = 'DISARMED'
-                fc.command = cmds.disarm_cmd
-                fc.send_rc_cmd()
-                fc.modepub.publish(fc.curr_mode)
-                break
-                
-            # Check battery and initiate landing if needed
-            if fc.check_battery() and fc.curr_mode == 'FLYING':
-                print("Low battery detected. Initiating landing sequence.")
-                fc.modepub.publish('LAND')
-                
-            # update and publish flight controller readings
-            fc.update_battery_message()
-            fc.update_imu_message()
-            imupub.publish(fc.imu_message)
-            batpub.publish(fc.battery_message)
-
-            # update and send the flight commands to the board
-            fc.update_command()
-            fc.send_rc_cmd()
-
-            # publish the current mode of the drone
-            fc.modepub.publish(fc.curr_mode)
-
-            # sleep for the remainder of the loop time
-            r.sleep()
-            
-    except SerialException:
-        print('\nCannot connect to the flight controller board.')
-        print('The USB is unplugged. Please check connection.')
-    except Exception as e:
-        print('there was an internal error', e)
-        print(traceback.format_exc())
-    finally:
-        print('Shutdown received')
-        print('Sending DISARM command')
-        if hasattr(fc, 'board') and fc.board:
-            fc.board.send_RAW_RC(cmds.disarm_cmd)
-        print('Disconnecting from board')
-        if hasattr(fc, 'board') and fc.board:
-            fc.board.__exit__()
+    # Start the main loop
+    await fc.main_loop(imupub, batpub)
 
 
 if __name__ == '__main__':
-    main()
+    # Run the asyncio event loop
+    asyncio.run(main())
