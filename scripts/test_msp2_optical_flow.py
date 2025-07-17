@@ -7,7 +7,7 @@ import numpy as np
 import cv2
 from geometry_msgs.msg import TwistStamped
 from raspicam_node.msg import MotionVectors
-from sensor_msgs.msg import Range, CompressedImage
+from sensor_msgs.msg import CompressedImage
 from unavlib.control.uavcontrol import UAVControl
 from unavlib import MSPy
 
@@ -34,6 +34,7 @@ class OpticalFlowRelay:
         self.serial_port = rospy.get_param('~serial_port', '/dev/ttyACM0')
         self.baudrate = rospy.get_param('~baudrate', 115200)
         self.update_rate = rospy.get_param('~update_rate', 40)  # Hz - 40Hz for good performance
+        self.debug = rospy.get_param('~debug', False)  # Debug mode disabled by default
         
         # Connect to flight controller
         self.board = None
@@ -58,7 +59,6 @@ class OpticalFlowRelay:
         self.last_motion_x = 0.0
         self.last_motion_y = 0.0
         self.last_quality = 255  # Default quality (0-255)
-        self.altitude = 0.03  # initialize to a bit off the ground
         self.last_update_time = rospy.Time.now()
         
         # OpenCV feature detection
@@ -66,22 +66,21 @@ class OpticalFlowRelay:
         self.current_image = None
         self.orb = cv2.ORB_create(50)  # Use ORB with max 50 features
         
-        # Subscribe to camera image, motion vectors and altitude
+        # Subscribe to camera image
         rospy.Subscriber('/raspicam_node/image/compressed', CompressedImage, self.image_callback, queue_size=1)
-        rospy.Subscriber('/pidrone/range', Range, self.altitude_callback, queue_size=1)
         
         # Timer for sending data to flight controller
         self.timer = rospy.Timer(rospy.Duration(1.0/self.update_rate), self.send_flow_data)
         
         rospy.loginfo("Advanced Optical Flow relay initialized")
         
-        # Print board capabilities
-        self.print_board_info()
+        # Print board capabilities only in debug mode
+        if self.debug:
+            self.print_board_info()
         
         # Tracking successful sends
         self.send_count = 0
         self.last_send_time = rospy.Time.now()
-        self.altitude_ts = rospy.Time.now()
 
     def print_board_info(self):
         """Print board information for debugging"""
@@ -124,11 +123,6 @@ class OpticalFlowRelay:
             except Exception as e:
                 rospy.logerr(f"Failed to connect to flight controller on alternative port: {e}")
                 rospy.signal_shutdown("Could not connect to flight controller")
-
-    def altitude_callback(self, msg):
-        """Process incoming altitude data"""
-        self.altitude = msg.range
-        self.altitude_ts = rospy.Time.now()
 
     def image_callback(self, msg):
         """Process incoming camera images and calculate optical flow"""
@@ -200,21 +194,19 @@ class OpticalFlowRelay:
                 self.last_motion_y = 0.0
                 self.last_quality = 0
             
-            # Log flow data occasionally
-            if (now - self.last_send_time).to_sec() >= 1.0:  # Log once per second
-                rospy.loginfo(f"Flow: X={self.last_motion_x:.6f}, Y={self.last_motion_y:.6f}, quality={self.last_quality}, altitude={self.altitude:.3f}m")
+            # Log flow data occasionally and only in debug mode
+            if self.debug and (now - self.last_send_time).to_sec() >= 1.0:  # Log once per second
+                rospy.loginfo(f"Flow: X={self.last_motion_x:.6f}, Y={self.last_motion_y:.6f}, quality={self.last_quality}")
                 self.last_send_time = now
-            
-            # Check if altitude data is recent
-            duration_from_last_altitude = now - self.altitude_ts
-            if duration_from_last_altitude.to_sec() > 10:
-                rospy.logwarn(f"No altitude received for {duration_from_last_altitude.to_sec():.1f} seconds.")
             
             # Update previous image
             self.prev_image = image
             
         except Exception as e:
             rospy.logerr(f"Error processing image: {e}")
+            if self.debug:
+                import traceback
+                rospy.logerr(traceback.format_exc())
 
     def send_flow_data(self, event=None):
         """Send optical flow data to flight controller"""
@@ -246,23 +238,28 @@ class OpticalFlowRelay:
                 # The flight controller just receives the data
                 self.send_count += 1
                 
-                # Log success message periodically to avoid flooding logs
-                if self.send_count % 40 == 0:  # Log every 40 successful sends (approximately once per second)
+                # Log success message periodically and only in debug mode
+                if self.debug and self.send_count % 40 == 0:  # Log every 40 successful sends (approximately once per second)
                     rospy.loginfo(f"Successfully sent {self.send_count} flow updates. Latest: X={flow_data['motionX']:.6f}, Y={flow_data['motionY']:.6f}, Q={flow_data['quality']}")
             else:
+                # Always log failures
                 rospy.logwarn("Failed to send optical flow data")
             
         except Exception as e:
             rospy.logerr(f"Error sending optical flow data: {e}")
-            import traceback
-            rospy.logerr(traceback.format_exc())
+            if self.debug:
+                import traceback
+                rospy.logerr(traceback.format_exc())
             
     def shutdown(self):
         """Clean up when node is shutting down"""
         if self.board:
             try:
                 self.board.disconnect()
-                rospy.loginfo(f"Disconnected from flight controller after sending {self.send_count} flow updates")
+                if self.debug:
+                    rospy.loginfo(f"Disconnected from flight controller after sending {self.send_count} flow updates")
+                else:
+                    rospy.loginfo("Disconnected from flight controller")
             except:
                 pass
 

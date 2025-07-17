@@ -30,6 +30,7 @@ class RangefinderRelay:
         self.serial_port = rospy.get_param('~serial_port', '/dev/ttyACM0')
         self.baudrate = rospy.get_param('~baudrate', 115200)
         self.update_rate = rospy.get_param('~update_rate', 40)  # Hz - increased to 40Hz for better performance
+        self.debug = rospy.get_param('~debug', False)  # Debug mode disabled by default
         
         # Connect to flight controller
         self.board = None
@@ -47,8 +48,9 @@ class RangefinderRelay:
         
         rospy.loginfo("Rangefinder relay initialized")
         
-        # Print board capabilities
-        self.print_board_info()
+        # Print board capabilities only in debug mode
+        if self.debug:
+            self.print_board_info()
         
         # Tracking successful sends
         self.send_count = 0
@@ -107,14 +109,15 @@ class RangefinderRelay:
             self.last_range = int(msg.range * 1000)  # Convert meters to millimeters
             self.last_quality = 255  # Maximum quality
         
-        # Only log range data occasionally to reduce log spam
-        now = rospy.Time.now()
-        if (now - self.last_send_time).to_sec() >= 1.0:  # Log once per second
-            if self.last_range < 0:
-                rospy.loginfo(f"Current range: OUT OF RANGE, quality: {self.last_quality}")
-            else:
-                rospy.loginfo(f"Current range: {msg.range:.3f}m ({self.last_range}mm), quality: {self.last_quality}")
-            self.last_send_time = now
+        # Only log range data occasionally and only in debug mode
+        if self.debug:
+            now = rospy.Time.now()
+            if (now - self.last_send_time).to_sec() >= 1.0:  # Log once per second
+                if self.last_range < 0:
+                    rospy.loginfo(f"Current range: OUT OF RANGE, quality: {self.last_quality}")
+                else:
+                    rospy.loginfo(f"Current range: {msg.range:.3f}m ({self.last_range}mm), quality: {self.last_quality}")
+                self.last_send_time = now
 
     def send_range_data(self, event=None):
         """Send rangefinder data to flight controller"""
@@ -144,26 +147,31 @@ class RangefinderRelay:
                 # The flight controller just receives the data
                 self.send_count += 1
                 
-                # Log success message periodically to avoid flooding logs
-                if self.send_count % 40 == 0:  # Log every 40 successful sends (approximately once per second)
+                # Log success message periodically and only in debug mode
+                if self.debug and self.send_count % 40 == 0:  # Log every 40 successful sends (approximately once per second)
                     if self.last_range < 0:
                         rospy.loginfo(f"Successfully sent {self.send_count} rangefinder updates. Latest: OUT OF RANGE")
                     else:
                         rospy.loginfo(f"Successfully sent {self.send_count} rangefinder updates. Latest: {range_data['distanceMm']}mm ({range_data['distanceMm']/1000.0:.2f}m)")
             else:
+                # Always log failures
                 rospy.logwarn("Failed to send rangefinder data")
             
         except Exception as e:
             rospy.logerr(f"Error sending rangefinder data: {e}")
-            import traceback
-            rospy.logerr(traceback.format_exc())
+            if self.debug:
+                import traceback
+                rospy.logerr(traceback.format_exc())
             
     def shutdown(self):
         """Clean up when node is shutting down"""
         if self.board:
             try:
                 self.board.disconnect()
-                rospy.loginfo(f"Disconnected from flight controller after sending {self.send_count} rangefinder updates")
+                if self.debug:
+                    rospy.loginfo(f"Disconnected from flight controller after sending {self.send_count} rangefinder updates")
+                else:
+                    rospy.loginfo("Disconnected from flight controller")
             except:
                 pass
 
