@@ -55,21 +55,22 @@ stuff "until rostopic list > /dev/null 2>&1; do sleep 1; done\n"
 stuff "echo 'ROS core detected, starting web video server'\n"
 stuff "rosrun web_video_server web_video_server\n"
 
-# 3. Start flight controller
-screen -t "FC"
-stuff "cd $(rospack find pidrone_pkg)/scripts/\n"
-stuff "echo 'Waiting for roscore...'\n"
-stuff "until rostopic list > /dev/null 2>&1; do sleep 1; done\n"
-stuff "echo 'ROS core detected, starting flight controller'\n"
-stuff "python flight_controller_node.py\n"
-
-# 4. Start hardware interface nodes
+# 3. Start hardware interface nodes
 screen -t "TOF"
 stuff "echo 'Waiting for roscore...'\n"
 stuff "until rostopic list > /dev/null 2>&1; do sleep 1; done\n"
 stuff "echo 'ROS core detected, starting TOF sensor'\n"
 stuff "source ~/catkin_ws/install/setup.bash && roslaunch launch/tof.launch\n"
 
+# 4. Start rangefinder relay (после TOF)
+screen -t "Range Relay"
+stuff "cd $(rospack find pidrone_pkg)/scripts/\n"
+stuff "echo 'Waiting for TOF sensor...'\n"
+stuff "until rostopic list | grep -q '/pidrone/range'; do sleep 1; done\n"
+stuff "echo 'TOF sensor detected, starting rangefinder relay'\n"
+stuff "python test_msp2_sensor_range.py\n"
+
+# 5. Start camera
 screen -t "Vision"
 stuff "cd $(rospack find pidrone_pkg)/scripts\n"
 stuff "echo 'Waiting for TOF sensor...'\n"
@@ -77,36 +78,21 @@ stuff "until rostopic list | grep -q '/pidrone/range'; do sleep 1; done\n"
 stuff "echo 'TOF sensor detected, starting camera node'\n"
 stuff "roslaunch --wait pidrone_pkg raspicam_node.launch\n"
 
-# 5. Start vision processing nodes
+# 6. Start optical flow
 screen -t "Optical Flow"
 stuff "cd $(rospack find pidrone_pkg)/scripts\n"
 stuff "echo 'Waiting for camera topics...'\n"
 stuff "until rostopic list | grep -q '/raspicam_node/image'; do sleep 1; done\n"
 stuff "echo 'Camera topics detected, starting optical flow node'\n"
-stuff "python optical_flow_node.py\n"
+stuff "python test_msp2_optical_flow.py\n"
 
-screen -t "Rigid Transform"
-stuff "cd $(rospack find pidrone_pkg)/scripts\n"
-stuff "echo 'Waiting for camera and IR topics...'\n"
-stuff "until rostopic list | grep -q '/raspicam_node/image' && rostopic list | grep -q '/pidrone/range'; do sleep 1; done\n"
-stuff "echo 'Required topics detected, starting rigid transform node'\n"
-stuff "python rigid_transform_node.py\n"
-
-# 6. Start state estimator
-screen -t "SE"
-stuff "cd $(rospack find pidrone_pkg)/scripts/\n"
-stuff "echo 'Waiting for flight controller and vision nodes...'\n"
-stuff "until rostopic list | grep -q '/pidrone/imu' && rostopic list | grep -q '/pidrone/picamera/twist' && rostopic list | grep -q '/pidrone/picamera/pose'; do sleep 1; done\n"
-stuff "echo 'Required topics detected, starting state estimator'\n"
-stuff "python state_estimator.py -p ema\n"
-
-# 7. Start PID controller
-screen -t "PID"
-stuff "cd $(rospack find pidrone_pkg)/scripts/\n"
-stuff "echo 'Waiting for state estimator...'\n"
-stuff "until rostopic list | grep -q '/pidrone/state'; do sleep 1; done\n"
-stuff "echo 'State topic detected, starting PID controller'\n"
-stuff "python pid_controller.py\n"
+# 7. Start ArUco маркеров
+screen -t "ArUco"
+stuff "cd $(rospack find pidrone_pkg)/scripts/aruco\n"
+stuff "echo 'Waiting for camera topics...'\n"
+stuff "until rostopic list | grep -q '/raspicam_node/image_raw'; do sleep 1; done\n"
+stuff "echo 'Camera topics detected, starting ArUco marker detection'\n"
+stuff "python3 recognition_of_aruco_marker_node.py _image_topic:=/raspicam_node/image_raw _map_path:=$(rospack find pidrone_pkg)/scripts/aruco/sample_map.txt\n"
 
 # Free terminals for user commands
 screen -t "free1"
