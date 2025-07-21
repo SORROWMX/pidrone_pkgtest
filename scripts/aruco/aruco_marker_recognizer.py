@@ -5,10 +5,45 @@ import numpy as np
 
 from typing import Tuple, Dict, Optional
 
+# Проверяем версию OpenCV
+cv_version = cv2.__version__.split('.')
+major_version = int(cv_version[0])
+minor_version = int(cv_version[1]) if len(cv_version) > 1 else 0
+
+# Определяем функцию для отрисовки осей в зависимости от версии OpenCV
+def draw_axis(img, camera_matrix, dist_coeffs, rvec, tvec, length=0.1, thickness=2):
+    """
+    Совместимая с разными версиями OpenCV функция для отрисовки осей координат
+    """
+    # Для OpenCV 4.x и новее используем встроенную функцию
+    if hasattr(cv2, 'drawFrameAxes'):
+        return cv2.drawFrameAxes(img, camera_matrix, dist_coeffs, rvec, tvec, length, thickness)
+    # Для более старых версий реализуем свою
+    else:
+        # Определяем точки осей в 3D
+        points = np.float32([[0, 0, 0], [length, 0, 0], [0, length, 0], [0, 0, length]])
+        # Проецируем их на изображение
+        img_points, _ = cv2.projectPoints(points, rvec, tvec, camera_matrix, dist_coeffs)
+        
+        # Рисуем оси
+        origin = tuple(img_points[0].ravel().astype(int))
+        x_axis = tuple(img_points[1].ravel().astype(int))
+        y_axis = tuple(img_points[2].ravel().astype(int))
+        z_axis = tuple(img_points[3].ravel().astype(int))
+        
+        # X-axis (красная)
+        img = cv2.line(img, origin, x_axis, (0, 0, 255), thickness)
+        # Y-axis (зеленая)
+        img = cv2.line(img, origin, y_axis, (0, 255, 0), thickness)
+        # Z-axis (синяя)
+        img = cv2.line(img, origin, z_axis, (255, 0, 0), thickness)
+        
+        return img
+
 class ArucoRecognizer:
 
-    def __init__(self, aruco_dictionary: aruco.DetectorParameters, marker_size: float, distance_coefficients: np.ndarray, 
-                 detector_parameters: np.ndarray, camera_matrix: np.ndarray, length_override: Dict[int, float] = None) -> None:
+    def __init__(self, aruco_dictionary, marker_size: float, distance_coefficients: np.ndarray, 
+                 detector_parameters, camera_matrix: np.ndarray, length_override: Dict[int, float] = None) -> None:
         """
         When initializing an instance of the class, 
         parameters for the detector are passed, 
@@ -75,13 +110,16 @@ class ArucoRecognizer:
                 rotation_vectors.append(rvec)
                 translation_vectors.append(tvec)
                 
-                frame_with_axes = cv2.drawFrameAxes(image=frame_with_axes, 
-                                               cameraMatrix=self.camera_matrix, 
-                                               distCoeffs=self.distance_coefficients, 
-                                               rvec=rvec[0], 
-                                               tvec=tvec[0], 
-                                               length=0.02, 
-                                               thickness=2)
+                # Используем совместимую функцию для отрисовки осей
+                frame_with_axes = draw_axis(
+                    img=frame_with_axes, 
+                    camera_matrix=self.camera_matrix, 
+                    dist_coeffs=self.distance_coefficients, 
+                    rvec=rvec[0], 
+                    tvec=tvec[0], 
+                    length=0.02, 
+                    thickness=2
+                )
                 
                 #biases for drowing text, not for calculating 
                 x_bias = 30
