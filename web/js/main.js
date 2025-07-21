@@ -48,11 +48,6 @@ var lastPositionMode = null;
 var positionModeDebounceTimer = null;
 var notificationDebounceTime = 500; // ms
 
-// Добавляем переменные для ArUco маркеров
-var markersInfoSub;
-var lastMarkersInfo = null;
-var markersUpdateTimer = null;
-
 function closeSession(){
   console.log("Closing connections.");
   if (ros) {
@@ -100,7 +95,6 @@ function connect() {
       
       // Инициализация новых функций
       setupStateSubscription();
-      setupMarkersSubscription(); // Добавляем подписку на информацию о маркерах
     });
 
     ros.on('close', function() {
@@ -308,14 +302,6 @@ function connect() {
         throttle_rate : 80
     });
 
-    // Подписываемся на информацию о маркерах
-    markersInfoSub = new ROSLIB.Topic({
-        ros : ros,
-        name : '/drone_vision/markers_info',
-        messageType : 'std_msgs/String',
-        queue_length : 1
-    });
-
     /*
      * ROS Subscriber Callbacks
      */
@@ -405,19 +391,6 @@ function connect() {
       }
     });
 
-    // Обработчик сообщений с информацией о маркерах
-    markersInfoSub.subscribe(function(message) {
-        try {
-            var markersData = JSON.parse(message.data);
-            lastMarkersInfo = markersData;
-            
-            // Обновляем UI с информацией о маркерах
-            updateMarkersUI(markersData);
-        } catch (e) {
-            console.error('Ошибка при обработке данных о маркерах:', e);
-        }
-    });
-
     var heightChartMinTime;
     var heightChartMaxTime;
     irsub.subscribe(function(message) {
@@ -459,6 +432,9 @@ function connect() {
       //console.log("Data: " + heightChart.data.datasets[0].data);
       //console.log('tVal: ' + tVal)
     });
+
+
+
 
     var velocityChartMinTime;
     var velocityChartMaxTime;
@@ -909,64 +885,9 @@ function connect() {
   }
 
   function imageStream() {
-    var hostname = document.getElementById('hostname').value;
-    
-    // Устанавливаем обычное изображение
     var image = document.getElementById('cameraImage');
-    image.src = "http://" + hostname + ":8080/stream?topic=/raspicam_node/image&quality=70&type=mjpeg";
-    
-    // Устанавливаем изображение с маркерами
-    var markersImage = document.getElementById('markersImage');
-    markersImage.src = "http://" + hostname + ":8080/stream?topic=/drone_vision/image_with_marks&quality=70&type=mjpeg";
-  }
+    image.src = "http://" + document.getElementById('hostname').value + ":8080/stream?topic=/raspicam_node/image&quality=70&type=ros_compressed";
 
-  // Функция для обновления UI с информацией о маркерах
-  function updateMarkersUI(markersData) {
-    var markersList = document.getElementById('markers-list');
-    var noMarkersMessage = document.getElementById('no-markers-message');
-    
-    // Очищаем текущий список маркеров
-    markersList.innerHTML = '';
-    
-    if (markersData && markersData.markers && markersData.markers.length > 0) {
-        // Есть маркеры для отображения
-        noMarkersMessage.style.display = 'none';
-        markersList.style.display = 'block';
-        
-        // Сортируем маркеры по расстоянию (ближайшие сверху)
-        markersData.markers.sort(function(a, b) {
-            return a.distance - b.distance;
-        });
-        
-        // Добавляем каждый маркер в список
-        markersData.markers.forEach(function(marker) {
-            var markerItem = document.createElement('div');
-            markerItem.className = 'marker-item';
-            
-            var markerContent = '<div class="marker-id">Маркер #' + marker.id + '</div>';
-            markerContent += '<div class="marker-distance">Расстояние: ' + marker.distance.toFixed(2) + ' м</div>';
-            markerContent += '<div class="marker-coords">X: ' + marker.x.toFixed(2) + 
-                            ' м, Y: ' + marker.y.toFixed(2) + 
-                            ' м, Z: ' + marker.z.toFixed(2) + ' м</div>';
-            
-            markerItem.innerHTML = markerContent;
-            markersList.appendChild(markerItem);
-        });
-        
-        // Показываем уведомление о новых маркерах (только при первом обнаружении)
-        if (!markersUpdateTimer) {
-            showNotification('Обнаружены ArUco маркеры: ' + markersData.markers.length + ' шт.', 'info');
-            
-            // Устанавливаем таймер, чтобы не показывать уведомления слишком часто
-            markersUpdateTimer = setTimeout(function() {
-                markersUpdateTimer = null;
-            }, 5000);
-        }
-    } else {
-        // Нет маркеров для отображения
-        noMarkersMessage.style.display = 'block';
-        markersList.style.display = 'none';
-    }
   }
 
   var irAlphaVal = 0;
@@ -2229,33 +2150,4 @@ function getIconForType(type) {
         default:
             return 'fa-info-circle';
     }
-}
-
-// Функция для настройки подписки на информацию о маркерах
-function setupMarkersSubscription() {
-    if (!ros || !ros.isConnected) {
-        console.log("ROS не подключен. Невозможно настроить подписку на маркеры.");
-        return;
-    }
-    
-    markersInfoSub = new ROSLIB.Topic({
-        ros: ros,
-        name: '/drone_vision/markers_info',
-        messageType: 'std_msgs/String',
-        queue_length: 1
-    });
-    
-    markersInfoSub.subscribe(function(message) {
-        try {
-            var markersData = JSON.parse(message.data);
-            lastMarkersInfo = markersData;
-            
-            // Обновляем UI с информацией о маркерах
-            updateMarkersUI(markersData);
-        } catch (e) {
-            console.error('Ошибка при обработке данных о маркерах:', e);
-        }
-    });
-    
-    console.log("Подписка на информацию о маркерах настроена");
 }
