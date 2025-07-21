@@ -58,7 +58,7 @@
                             <div class="input-group-prepend">
                                 <span class="input-group-text host-label"><i class="fas fa-server mr-2"></i>Хост:</span>
                             </div>
-                            <input type="text" class="form-control host-input" id="hostname" value="coptra2" placeholder="Введите имя хоста">
+                            <input type="text" class="form-control host-input" id="hostname" value="coptra1" placeholder="Введите имя хоста">
                             <div class="input-group-append">
                                 <button id="connectButton" class="btn btn-connect" type="button" onclick="connect()">
                                     <i class="fas fa-plug"></i> Подключить
@@ -121,30 +121,9 @@
                 <div class="dashboard-panel">
                     <h4><i class="fas fa-camera"></i> Изображение с камеры</h4>
                     <div class="text-center">
-                        <div class="camera-container">
-                            <img id="cameraImage" alt="Изображение с камеры" src="nocamera.jpg" class="img-fluid rounded" style="max-width: 100%"/>
-                            <img id="markersImage" alt="Изображение с маркерами" src="nocamera.jpg" class="img-fluid rounded" style="max-width: 100%; display: none;"/>
-                            <div class="camera-toggle">
-                                <button class="btn btn-sm btn-info" onclick="toggleCameraView()" id="cameraToggleBtn">
-                                    <i class="fas fa-exchange-alt"></i> Показать маркеры
-                                </button>
-                            </div>
-                        </div>
+                        <img id="cameraImage" alt="Изображение с камеры" src="nocamera.jpg" class="img-fluid rounded" style="max-width: 100%"/>
                         <div class="form-group mt-2">
                             <small id="imagetopicHelp" class="form-text text-muted">Убедитесь, что вы запустили <code>rosrun web_video_server web_video_server</code> и видеопоток.</small>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Добавляем новую панель для ArUco маркеров -->
-                <div class="dashboard-panel">
-                    <h4><i class="fas fa-qrcode"></i> ArUco Маркеры</h4>
-                    <div id="aruco-markers-container">
-                        <div class="alert alert-info" id="no-markers-message">
-                            <i class="fas fa-info-circle"></i> Маркеры не обнаружены
-                        </div>
-                        <div id="markers-list" class="markers-list" style="display: none;">
-                            <!-- Здесь будет динамически отображаться информация о маркерах -->
                         </div>
                     </div>
                 </div>
@@ -330,49 +309,6 @@
 
     </div>
 
-    <!-- Добавляем CSS стили для отображения маркеров -->
-    <style>
-        .camera-container {
-            position: relative;
-            margin-bottom: 10px;
-        }
-        
-        .camera-toggle {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-        }
-        
-        .markers-list {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        
-        .marker-item {
-            padding: 10px;
-            margin-bottom: 8px;
-            border-radius: 5px;
-            background-color: rgba(54, 162, 235, 0.1);
-            border-left: 4px solid #36a2eb;
-        }
-        
-        .marker-id {
-            font-weight: bold;
-            font-size: 1.1em;
-        }
-        
-        .marker-distance {
-            font-weight: bold;
-            color: #ff6384;
-        }
-        
-        .marker-coords {
-            font-size: 0.9em;
-            color: #aaa;
-            margin-top: 5px;
-        }
-    </style>
-
     <script>
     // Функция для обновления индикатора статуса
     function updateStatusIndicator(connected) {
@@ -386,23 +322,6 @@
             $('.status-indicator').removeClass('status-connected').addClass('status-disconnected');
             $('#connectButton').show();
             $('#disconnectButton').hide();
-        }
-    }
-    
-    // Функция для переключения между обычным изображением и изображением с маркерами
-    function toggleCameraView() {
-        var cameraImage = document.getElementById('cameraImage');
-        var markersImage = document.getElementById('markersImage');
-        var toggleBtn = document.getElementById('cameraToggleBtn');
-        
-        if (cameraImage.style.display === 'none') {
-            cameraImage.style.display = 'block';
-            markersImage.style.display = 'none';
-            toggleBtn.innerHTML = '<i class="fas fa-exchange-alt"></i> Показать маркеры';
-        } else {
-            cameraImage.style.display = 'none';
-            markersImage.style.display = 'block';
-            toggleBtn.innerHTML = '<i class="fas fa-exchange-alt"></i> Показать обычное';
         }
     }
     

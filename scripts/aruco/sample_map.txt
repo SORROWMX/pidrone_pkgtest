@@ -1,7 +1,0 @@
-# ArUco marker map file
-# Format: marker_id marker_length x y z rot_z rot_y rot_x
-# Only marker_id and marker_length are required
-# Coordinates are in meters, angles in radians
-
-# Marker ID 105 with size 0.33 meters
-105 0.33 0.0 0.0 0.0 0.0 0.0 0.0
