@@ -77,6 +77,9 @@ stuff "echo 'Waiting for TOF sensor...'\n"
 stuff "until rostopic list | grep -q '/pidrone/range'; do sleep 1; done\n"
 stuff "echo 'TOF sensor detected, starting camera node'\n"
 stuff "roslaunch --wait pidrone_pkg raspicam_node.launch\n"
+stuff "sleep 2\n"
+stuff "echo 'Checking if camera is publishing...'\n"
+stuff "rostopic hz /raspicam_node/image -w 10\n"
 
 # 6. Start optical flow
 screen -t "Optical Flow"
@@ -90,10 +93,10 @@ stuff "python test_msp2_optical_flow.py\n"
 screen -t "ArUco"
 stuff "cd $(rospack find pidrone_pkg)/scripts/aruco\n"
 stuff "echo 'Waiting for camera topics...'\n"
-stuff "until rostopic list | grep -q '/raspicam_node/image_raw'; do sleep 1; done\n"
+stuff "until rostopic list | grep -q '/raspicam_node/image'; do sleep 1; done\n"
 stuff "echo 'Camera topics detected, starting ArUco marker detection'\n"
 stuff "echo 'Looking for marker ID 105 with size 0.33m'\n"
-stuff "python3 recognition_of_aruco_marker_node.py _image_topic:=/raspicam_node/image_raw _map_path:=$(rospack find pidrone_pkg)/scripts/aruco/sample_map.txt\n"
+stuff "python3 recognition_of_aruco_marker_node.py _image_topic:=/raspicam_node/image _map_path:=$(rospack find pidrone_pkg)/scripts/aruco/sample_map.txt\n"
 
 # Free terminals for user commands
 screen -t "free1"

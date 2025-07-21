@@ -913,11 +913,11 @@ function connect() {
     
     // Устанавливаем обычное изображение
     var image = document.getElementById('cameraImage');
-    image.src = "http://" + hostname + ":8080/stream?topic=/raspicam_node/image_raw/compressed&quality=70&type=ros_compressed";
+    image.src = "http://" + hostname + ":8080/stream?topic=/raspicam_node/image&quality=70&type=mjpeg";
     
     // Устанавливаем изображение с маркерами
     var markersImage = document.getElementById('markersImage');
-    markersImage.src = "http://" + hostname + ":8080/stream?topic=/drone_vision/image_with_marks/compressed&quality=70&type=ros_compressed";
+    markersImage.src = "http://" + hostname + ":8080/stream?topic=/drone_vision/image_with_marks&quality=70&type=mjpeg";
   }
 
   // Функция для обновления UI с информацией о маркерах
