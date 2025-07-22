@@ -63,7 +63,14 @@ catkin_install_python(PROGRAMS
   src/aruco_map.py
   src/aruco_draw.py
   src/aruco_utils.py
+  src/__init__.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+## Create Python package structure
+install(FILES
+  src/__init__.py
+  DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}/aruco_pose/src
 )
 
 ## Install launch files

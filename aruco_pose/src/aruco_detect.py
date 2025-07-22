@@ -21,7 +21,8 @@ from aruco_pose.srv import SetMarkers, SetMarkersResponse
 from dynamic_reconfigure.server import Server
 from aruco_pose.cfg import DetectorConfig
 
-from aruco_utils import fill_pose, fill_transform, apply_vertical, fill_corners, fill_translation
+# Изменяем импорт на относительный путь к модулю в том же пакете
+from aruco_pose.src.aruco_utils import fill_pose, fill_transform, apply_vertical, fill_corners, fill_translation
 
 
 class ArucoDetector:
