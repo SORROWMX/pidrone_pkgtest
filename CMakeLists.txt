@@ -10,6 +10,9 @@ find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   std_msgs
   message_generation
+  cv_bridge
+  sensor_msgs
+  tf2_ros
 )
 
 ## System dependencies are found with CMake's conventions
@@ -53,7 +56,9 @@ add_message_files(
   State.msg
   StateGroundTruth.msg
   UkfStats.msg
-
+  # Добавляем сообщения для ArUco
+  Marker.msg
+  MarkerArray.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -75,7 +80,6 @@ generate_messages(
   DEPENDENCIES
   geometry_msgs
   std_msgs
-  geometry_msgs
 )
 catkin_package(CATKIN_DEPENDS message_runtime)
 
@@ -156,11 +160,14 @@ include_directories(
 # See http://ros.org/doc/api/catkin/html/adv_user_guide/variables.html
 
 ## Mark executable scripts (Python etc.) for installation
-## in contrast to setup.py, you can choose the destination
-# install(PROGRAMS
-#   scripts/my_python_script
-#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+catkin_install_python(PROGRAMS
+  scripts/aruco/src/aruco_detect.py
+  scripts/aruco/src/aruco_map.py
+  scripts/aruco/src/aruco_utils.py
+  scripts/aruco/src/aruco_draw.py
+  scripts/aruco/src/genmap.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 ## Mark executables and/or libraries for installation
 # install(TARGETS pidrone_pkg pidrone_pkg_node
@@ -177,11 +184,15 @@ include_directories(
 # )
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
-# install(FILES
-#   # myfile1
-#   # myfile2
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
+install(DIRECTORY launch/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+  FILES_MATCHING PATTERN "*.launch"
+)
+
+install(DIRECTORY scripts/aruco/launch/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+  FILES_MATCHING PATTERN "*.launch"
+)
 
 #############
 ## Testing ##

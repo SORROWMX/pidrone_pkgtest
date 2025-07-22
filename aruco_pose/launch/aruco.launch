@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- ArUco detection parameters -->
+    <arg name="dictionary" default="2" />  <!-- DICT_4X4_250 -->
+    <arg name="length" default="0.33" />   <!-- marker side length in meters -->
+    <arg name="estimate_poses" default="true" />
+    <arg name="send_tf" default="true" />
+    <arg name="image_topic" default="/raspicam_node/image/compressed" />
+    <arg name="camera_info_topic" default="/raspicam_node/camera_info" />
+    <arg name="known_vertical" default="" />
+    <arg name="flip_vertical" default="false" />
+    <arg name="auto_flip" default="false" />
+    <arg name="map_file" default="" />
+
+    <!-- ArUco detector node -->
+    <node pkg="aruco_pose" type="aruco_detect.py" name="aruco_detect" output="screen">
+        <param name="dictionary" value="$(arg dictionary)" />
+        <param name="length" value="$(arg length)" />
+        <param name="estimate_poses" value="$(arg estimate_poses)" />
+        <param name="send_tf" value="$(arg send_tf)" />
+        <param name="image_topic" value="$(arg image_topic)" />
+        <param name="known_vertical" value="$(arg known_vertical)" />
+        <param name="flip_vertical" value="$(arg flip_vertical)" />
+        <param name="auto_flip" value="$(arg auto_flip)" />
+        <remap from="camera_info" to="$(arg camera_info_topic)" />
+    </node>
+
+    <!-- ArUco map node (only if map_file is specified) -->
+    <node if="$(eval map_file != '')" pkg="aruco_pose" type="aruco_map.py" name="aruco_map" output="screen">
+        <param name="dictionary" value="$(arg dictionary)" />
+        <param name="map" value="$(arg map_file)" />
+        <param name="known_vertical" value="$(arg known_vertical)" />
+        <param name="flip_vertical" value="$(arg flip_vertical)" />
+        <param name="auto_flip" value="$(arg auto_flip)" />
+        <remap from="image_raw" to="$(arg image_topic)" />
+        <remap from="camera_info" to="$(arg camera_info_topic)" />
+        <remap from="markers" to="aruco_detect/markers" />
+    </node>
+</launch> 
