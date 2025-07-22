@@ -16,4 +16,3 @@ logs/*
 *.DS_Store
 *.idea/
 /raspicam_node-kinetic-dd24
-/scripts/aruco
