@@ -88,13 +88,13 @@ stuff "until rostopic list | grep -q '/raspicam_node/image'; do sleep 1; done\n"
 stuff "echo 'Camera topics detected, starting optical flow node'\n"
 stuff "python optical_flow_node.py\n"
 
-# 7. Start ArUco маркеров
+# 7. Start ArUco marker detection
 screen -t "ArUco"
-stuff "cd $(rospack find pidrone_pkg)/scripts/aruco\n"
+stuff "cd $(rospack find pidrone_pkg)/scripts\n"
 stuff "echo 'Waiting for camera topics...'\n"
-stuff "until rostopic list | grep -q '/raspicam_node/image_raw'; do sleep 1; done\n"
+stuff "until rostopic list | grep -q '/raspicam_node/image/compressed'; do sleep 1; done\n"
 stuff "echo 'Camera topics detected, starting ArUco marker detection'\n"
-stuff "python3 recognition_of_aruco_marker_node.py _image_topic:=/raspicam_node/image_raw _map_path:=$(rospack find pidrone_pkg)/scripts/aruco/sample_map.txt\n"
+stuff "python aruco_pose_node.py\n"
 
 # Free terminals for user commands
 screen -t "free1"
