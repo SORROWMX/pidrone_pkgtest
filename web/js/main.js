@@ -42,6 +42,7 @@ var heightChartPaused = false;
 var velocityChartPaused = false;
 var showingUkfAnalysis = false;
 var spanningFullWindow = false;
+var arucoDebugVisible = true; // Переменная для отслеживания видимости ArUco отладки
 
 // Добавляем переменные для отслеживания последнего режима и дебаунсинга
 var lastPositionMode = null;
@@ -95,6 +96,9 @@ function connect() {
       
       // Инициализация новых функций
       setupStateSubscription();
+      
+      // Проверяем доступность топика с маркерами
+      checkArucoMarkersTopicAvailability();
     });
 
     ros.on('close', function() {
@@ -217,6 +221,15 @@ function connect() {
         queue_length : 2,
         throttle_rate : 80
     });
+    
+    // Подписка на топик с информацией о маркерах
+    arucoMarkersSub = new ROSLIB.Topic({
+        ros : ros,
+        name : '/aruco_detect/markers',
+        messageType : 'aruco_pose/MarkerArray',
+        queue_length : 1,
+        throttle_rate : 100
+    });
 
     // TODO: Merge with code that has Battery.msg
     // (published from flight controller node)
@@ -305,6 +318,45 @@ function connect() {
     /*
      * ROS Subscriber Callbacks
      */
+
+     // Обработка информации о маркерах
+     arucoMarkersSub.subscribe(function(message) {
+        
+        // Обновляем информацию о маркерах, если они есть
+        var markersInfo = '';
+        if (message.markers && message.markers.length > 0) {
+            markersInfo += '<div class="table-responsive"><table class="table table-sm table-dark"><thead><tr><th>ID</th><th>Размер</th><th>X</th><th>Y</th><th>Z</th><th>Углы (px)</th></tr></thead><tbody>';
+            
+            message.markers.forEach(function(marker) {
+                // Получаем кватернион и преобразуем в углы Эйлера для более наглядного отображения
+                var q = marker.pose.orientation;
+                var euler = quaternionToEuler(q);
+                var yawDeg = (euler.yaw * 180 / Math.PI).toFixed(1);
+                
+                markersInfo += '<tr>';
+                markersInfo += '<td>' + marker.id + '</td>';
+                markersInfo += '<td>' + marker.length.toFixed(2) + ' м</td>';
+                markersInfo += '<td>' + marker.pose.position.x.toFixed(2) + '</td>';
+                markersInfo += '<td>' + marker.pose.position.y.toFixed(2) + '</td>';
+                markersInfo += '<td>' + marker.pose.position.z.toFixed(2) + '</td>';
+                markersInfo += '<td><small>C1:(' + Math.round(marker.c1.x) + ',' + Math.round(marker.c1.y) + 
+                               ')<br>C2:(' + Math.round(marker.c2.x) + ',' + Math.round(marker.c2.y) + 
+                               ')<br>C3:(' + Math.round(marker.c3.x) + ',' + Math.round(marker.c3.y) + 
+                               ')<br>C4:(' + Math.round(marker.c4.x) + ',' + Math.round(marker.c4.y) + 
+                               ')</small></td>';
+                markersInfo += '</tr>';
+            });
+            
+            markersInfo += '</tbody></table></div>';
+            
+            // Показываем уведомление при обнаружении новых маркеров
+        } else {
+            markersInfo = '<div class="alert alert-warning mt-2"><i class="fas fa-exclamation-triangle"></i> Маркеры не обнаружены</div>';
+        }
+        
+        // Обновляем информацию на странице
+        $('#arucoMarkersInfo').html(markersInfo);
+    });
 
      positionSub.subscribe(function(message) {
         var position = message.data;
@@ -887,8 +939,11 @@ function connect() {
   function imageStream() {
     var image = document.getElementById('cameraImage');
     image.src = "http://" + document.getElementById('hostname').value + ":8080/stream?topic=/raspicam_node/image&quality=70&type=ros_compressed";
-
-  }
+    
+    // Добавляем поток ArUco маркеров
+    var arucoImage = document.getElementById('arucoDebugImage');
+    arucoImage.src = "http://" + document.getElementById('hostname').value + ":8080/stream?topic=/aruco_detect/debug&quality=70&type=ros_compressed";
+}
 
   var irAlphaVal = 0;
   var increasingAlpha = true;
@@ -1558,6 +1613,10 @@ $(document).ready(function() {
     loadHeightChartStandardView();
     loadVelocityChartStandardView();    
     xyctx = document.getElementById("xyChart").getContext('2d');
+    
+    // Инициализируем обновление ArUco маркеров
+    setupArucoRefresh();
+    
     xyChart = new Chart(xyctx, {
         type: 'line',
         data: {
@@ -2049,11 +2108,24 @@ function setupStateSubscription() {
 
 // Преобразование кватерниона в углы Эйлера
 function quaternionToEuler(q) {
-    return {
-        roll: Math.atan2(2 * (q.w * q.x + q.y * q.z), 1 - 2 * (q.x * q.x + q.y * q.y)),
-        pitch: Math.asin(2 * (q.w * q.y - q.z * q.x)),
-        yaw: Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
-    };
+    // Проверяем, что кватернион не нулевой
+    if (!q || (q.x === 0 && q.y === 0 && q.z === 0 && q.w === 0)) {
+        return { roll: 0, pitch: 0, yaw: 0 };
+    }
+    
+    // Нормализуем кватернион для уверенности
+    var norm = Math.sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    q.x /= norm;
+    q.y /= norm;
+    q.z /= norm;
+    q.w /= norm;
+    
+    // Вычисляем углы Эйлера
+    var roll = Math.atan2(2.0 * (q.w * q.x + q.y * q.z), 1.0 - 2.0 * (q.x * q.x + q.y * q.y));
+    var pitch = Math.asin(2.0 * (q.w * q.y - q.z * q.x));
+    var yaw = Math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+    
+    return { roll: roll, pitch: pitch, yaw: yaw };
 }
 
 // Обновление прогресс-баров
@@ -2150,4 +2222,72 @@ function getIconForType(type) {
         default:
             return 'fa-info-circle';
     }
+}
+
+// Функция для переключения видимости ArUco отладки
+function toggleArucoDebug(btn) {
+    arucoDebugVisible = !arucoDebugVisible;
+    var arucoImage = document.getElementById('arucoDebugImage');
+    var toggleText = document.getElementById('arucoToggleText');
+    
+    if (arucoDebugVisible) {
+        arucoImage.style.display = 'inline';
+        toggleText.textContent = 'Скрыть маркеры';
+        $(btn).html('<i class="fas fa-eye-slash"></i> <span id="arucoToggleText">Скрыть маркеры</span>');
+        
+        // Обновляем изображение, если оно было скрыто
+        arucoImage.src = "http://" + document.getElementById('hostname').value + ":8080/stream?topic=/aruco_detect/debug&quality=70&type=ros_compressed&t=" + new Date().getTime();
+    } else {
+        arucoImage.style.display = 'none';
+        toggleText.textContent = 'Показать маркеры';
+        $(btn).html('<i class="fas fa-eye"></i> <span id="arucoToggleText">Показать маркеры</span>');
+    }
+}
+
+// Функция для периодического обновления изображения ArUco маркеров
+function setupArucoRefresh() {
+    setInterval(function() {
+        if (arucoDebugVisible && $('#autoRefreshAruco').is(':checked') && ros && ros.isConnected) {
+            var arucoImage = document.getElementById('arucoDebugImage');
+            // Добавляем временную метку для предотвращения кэширования
+            arucoImage.src = "http://" + document.getElementById('hostname').value + ":8080/stream?topic=/aruco_detect/debug&quality=70&type=ros_compressed&t=" + new Date().getTime();
+            
+            // Добавляем анимацию обновления
+            $('#arucoDebugImage').addClass('aruco-refreshing');
+            setTimeout(function() {
+                $('#arucoDebugImage').removeClass('aruco-refreshing');
+            }, 1000);
+        }
+    }, 2000); // Обновление каждые 2 секунды
+}
+
+// Функция для проверки доступности топика с маркерами
+function checkArucoMarkersTopicAvailability() {
+    if (!ros || !ros.isConnected) return;
+    
+    console.log("Проверяем доступность топика с маркерами...");
+    
+    var topicType = new ROSLIB.Service({
+        ros: ros,
+        name: '/rosapi/topic_type',
+        serviceType: 'rosapi/TopicType'
+    });
+    
+    var request = new ROSLIB.ServiceRequest({
+        topic: '/aruco_detect/markers'
+    });
+    
+    topicType.callService(request, function(result) {
+        console.log("Тип топика /aruco_detect/markers: " + result.type);
+        if (result.type) {
+            showNotification('Топик с маркерами доступен: ' + result.type, 'success');
+            $('#arucoMarkersInfo').html('<div class="alert alert-info"><i class="fas fa-spinner fa-spin mr-2"></i>Ожидание данных о маркерах...</div>');
+        } else {
+            showNotification('Топик с маркерами недоступен', 'warning');
+            $('#arucoMarkersInfo').html('<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> Топик /aruco_detect/markers недоступен. Убедитесь, что aruco_detect запущен.</div>');
+        }
+    }, function(error) {
+        console.error("Ошибка при проверке топика:", error);
+        $('#arucoMarkersInfo').html('<div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> Ошибка при проверке топика с маркерами.</div>');
+    });
 }

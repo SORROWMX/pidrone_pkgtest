@@ -4,4 +4,4 @@
 Marker[] markers # if length or pose is nan - remove from map
 ---
 bool success
-string message 
+string message

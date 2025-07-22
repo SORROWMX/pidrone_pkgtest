@@ -90,11 +90,10 @@ stuff "python optical_flow_node.py\n"
 
 # 7. Start ArUco marker detection
 screen -t "ArUco"
-stuff "cd $(rospack find pidrone_pkg)/scripts\n"
 stuff "echo 'Waiting for camera topics...'\n"
 stuff "until rostopic list | grep -q '/raspicam_node/image/compressed'; do sleep 1; done\n"
 stuff "echo 'Camera topics detected, starting ArUco marker detection'\n"
-stuff "python aruco_pose_node.py\n"
+stuff "roslaunch aruco_pose aruco.launch\n"
 
 # Free terminals for user commands
 screen -t "free1"

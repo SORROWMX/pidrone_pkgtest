@@ -739,3 +739,92 @@ canvas {
   height: 450px !important;
   position: relative;
 }
+
+/* Стили для ArUco маркеров */
+.aruco-debug-container {
+  position: relative;
+  margin-bottom: 1rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.aruco-debug-container img {
+  border: 1px solid var(--border-color);
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+  transition: all 0.3s ease;
+}
+
+.aruco-debug-container img:hover {
+  box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.15);
+}
+
+.form-check-input {
+  background-color: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+}
+
+.form-check-input:checked {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.form-check-label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-left: 0.25rem;
+}
+
+/* Стили для таблицы с информацией о маркерах */
+#arucoMarkersInfo .table {
+  background-color: rgba(0, 0, 0, 0.2);
+  color: var(--text-color);
+  margin-bottom: 0;
+  font-size: 0.9rem;
+}
+
+#arucoMarkersInfo .table th {
+  background-color: rgba(0, 0, 0, 0.3);
+  color: var(--text-secondary);
+  font-weight: 600;
+  border-color: var(--border-color);
+}
+
+#arucoMarkersInfo .table td {
+  border-color: var(--border-color);
+}
+
+#arucoMarkersInfo .table-dark {
+  background-color: var(--card-background);
+}
+
+#arucoMarkersInfo .alert {
+  margin-bottom: 0;
+}
+
+/* Анимация для ArUco изображения при обновлении */
+@keyframes aruco-refresh {
+  0% { opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+
+.aruco-refreshing {
+  animation: aruco-refresh 1s;
+}
+
+/* Адаптивные стили для мобильных устройств */
+@media (max-width: 768px) {
+  .aruco-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .aruco-controls .btn {
+    margin-bottom: 0.5rem;
+    width: 100%;
+  }
+  
+  .form-check {
+    margin-top: 0.5rem;
+  }
+}
