@@ -21,14 +21,34 @@ from aruco_pose.srv import SetMarkers, SetMarkersResponse
 from dynamic_reconfigure.server import Server
 from aruco_pose.cfg import DetectorConfig
 
-# Изменяем импорт на относительный путь к модулю в том же пакете
-from aruco_pose.src.aruco_utils import fill_pose, fill_transform, apply_vertical, fill_corners, fill_translation
+# Пытаемся импортировать aruco_utils разными способами
+try:
+    # Сначала пробуем прямой импорт (если файл находится в PYTHONPATH)
+    from aruco_utils import fill_pose, fill_transform, apply_vertical, fill_corners, fill_translation
+except ImportError:
+    try:
+        # Пробуем импортировать из пакета aruco_pose
+        from aruco_pose.src.aruco_utils import fill_pose, fill_transform, apply_vertical, fill_corners, fill_translation
+    except ImportError:
+        # Если не получается, импортируем локально
+        import os
+        import sys
+        # Добавляем текущую директорию в путь поиска модулей
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if current_dir not in sys.path:
+            sys.path.append(current_dir)
+        # Теперь пробуем импортировать
+        from aruco_utils import fill_pose, fill_transform, apply_vertical, fill_corners, fill_translation
 
 
 class ArucoDetector:
     def __init__(self):
         # Initialize ROS node
         rospy.init_node('aruco_detect', anonymous=True)
+        
+        # Log OpenCV version
+        cv_version = cv2.__version__
+        rospy.loginfo(f"Using OpenCV version: {cv_version}")
         
         # Get parameters
         self.enabled = True
@@ -208,8 +228,22 @@ class ArucoDetector:
             tvecs = None
             
             if self.estimate_poses:
-                rvecs, tvecs = cv2.aruco.estimatePoseSingleMarkers(corners, self.length, 
-                                                                 self.camera_matrix, self.dist_coeffs)
+                # Обрабатываем разные версии OpenCV (3.x возвращает 2 значения, 4.x - 3 значения)
+                result = cv2.aruco.estimatePoseSingleMarkers(corners, self.length, 
+                                                          self.camera_matrix, self.dist_coeffs)
+                
+                # Выводим отладочную информацию о результате
+                rospy.loginfo(f"estimatePoseSingleMarkers returned {len(result)} values")
+                
+                # Проверяем, сколько значений вернула функция
+                if len(result) == 2:
+                    rvecs, tvecs = result
+                else:
+                    # В OpenCV 4.x возвращается 3 значения
+                    rvecs, tvecs = result[0], result[1]
+                
+                # Выводим информацию о форме массивов
+                rospy.loginfo(f"rvecs shape: {np.asarray(rvecs).shape}, tvecs shape: {np.asarray(tvecs).shape}")
                 
                 # Process length override
                 if self.length_override:
@@ -217,10 +251,18 @@ class ArucoDetector:
                         if marker_id in self.length_override:
                             # Re-estimate with correct length
                             corners_current = [corners[i]]
-                            rvecs_current, tvecs_current = cv2.aruco.estimatePoseSingleMarkers(
+                            result_current = cv2.aruco.estimatePoseSingleMarkers(
                                 corners_current, self.length_override[marker_id],
                                 self.camera_matrix, self.dist_coeffs
                             )
+                            
+                            # Проверяем, сколько значений вернула функция
+                            if len(result_current) == 2:
+                                rvecs_current, tvecs_current = result_current
+                            else:
+                                # В OpenCV 4.x возвращается 3 значения
+                                rvecs_current, tvecs_current = result_current[0], result_current[1]
+                                
                             rvecs[i] = rvecs_current[0]
                             tvecs[i] = tvecs_current[0]
                 
@@ -282,8 +324,16 @@ class ArucoDetector:
             if self.send_tf and transforms:
                 self.br.sendTransform(transforms)
         
-        # Publish marker array
-        self.markers_pub.publish(array)
+        # Publish marker array - добавляем проверку на закрытый топик
+        try:
+            if not rospy.is_shutdown():
+                self.markers_pub.publish(array)
+        except rospy.exceptions.ROSException as e:
+            if "publish() to a closed topic" in str(e):
+                rospy.logwarn_throttle(1, "Topic closed, stopping publisher")
+                return
+            else:
+                raise
         
         # Publish visualization markers
         if self.estimate_poses and self.vis_markers_pub.get_num_connections() > 0:
@@ -301,7 +351,12 @@ class ArucoDetector:
                         marker_id, i
                     )
             
-            self.vis_markers_pub.publish(self.vis_array)
+            # Добавляем проверку на закрытый топик
+            try:
+                if not rospy.is_shutdown():
+                    self.vis_markers_pub.publish(self.vis_array)
+            except rospy.exceptions.ROSException:
+                pass
         
         # Publish debug image
         if self.debug_pub.get_num_connections() > 0:
@@ -311,12 +366,21 @@ class ArucoDetector:
                 
                 if self.estimate_poses:
                     for i, marker_id in enumerate(ids):
-                        cv2.aruco.drawAxis(debug_img, self.camera_matrix, self.dist_coeffs,
-                                         rvecs[i], tvecs[i], self.get_marker_length(marker_id))
+                        try:
+                            cv2.aruco.drawAxis(debug_img, self.camera_matrix, self.dist_coeffs,
+                                             rvecs[i], tvecs[i], self.get_marker_length(marker_id))
+                        except Exception as e:
+                            rospy.logwarn_throttle(5, f"Error drawing axis: {e}")
             
             debug_msg = self.bridge.cv2_to_imgmsg(debug_img, encoding="bgr8")
             debug_msg.header = header
-            self.debug_pub.publish(debug_msg)
+            
+            # Добавляем проверку на закрытый топик
+            try:
+                if not rospy.is_shutdown():
+                    self.debug_pub.publish(debug_msg)
+            except rospy.exceptions.ROSException:
+                pass
     
     def compressed_image_callback(self, msg):
         """Process compressed image"""

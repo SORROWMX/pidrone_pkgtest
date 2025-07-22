@@ -40,6 +40,16 @@ def rotate_point(p, origin, angle):
 
 def fill_pose(pose, rvec, tvec):
     """Fill a ROS Pose message from rotation and translation vectors"""
+    # Проверяем формат входных данных и адаптируем их
+    rvec = np.asarray(rvec).flatten()
+    tvec = np.asarray(tvec).flatten()
+    
+    # Проверяем размерность
+    if tvec.size < 3:
+        raise ValueError(f"Translation vector has wrong size: {tvec.size}, expected at least 3")
+    if rvec.size < 3:
+        raise ValueError(f"Rotation vector has wrong size: {rvec.size}, expected at least 3")
+    
     pose.position.x = tvec[0]
     pose.position.y = tvec[1]
     pose.position.z = tvec[2]
@@ -64,6 +74,16 @@ def fill_pose(pose, rvec, tvec):
 
 def fill_transform(transform, rvec, tvec):
     """Fill a ROS Transform message from rotation and translation vectors"""
+    # Проверяем формат входных данных и адаптируем их
+    rvec = np.asarray(rvec).flatten()
+    tvec = np.asarray(tvec).flatten()
+    
+    # Проверяем размерность
+    if tvec.size < 3:
+        raise ValueError(f"Translation vector has wrong size: {tvec.size}, expected at least 3")
+    if rvec.size < 3:
+        raise ValueError(f"Rotation vector has wrong size: {rvec.size}, expected at least 3")
+    
     transform.translation.x = tvec[0]
     transform.translation.y = tvec[1]
     transform.translation.z = tvec[2]
@@ -88,6 +108,13 @@ def fill_transform(transform, rvec, tvec):
 
 def fill_translation(translation, tvec):
     """Fill a ROS Vector3 message from a translation vector"""
+    # Проверяем формат входных данных и адаптируем их
+    tvec = np.asarray(tvec).flatten()
+    
+    # Проверяем размерность
+    if tvec.size < 3:
+        raise ValueError(f"Translation vector has wrong size: {tvec.size}, expected at least 3")
+    
     translation.x = tvec[0]
     translation.y = tvec[1]
     translation.z = tvec[2]

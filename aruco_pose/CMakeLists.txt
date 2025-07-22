@@ -73,6 +73,17 @@ install(FILES
   DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}/aruco_pose/src
 )
 
+## Создаем пользовательскую цель для создания символической ссылки
+add_custom_target(create_aruco_symlinks ALL
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CATKIN_DEVEL_PREFIX}/lib/${PROJECT_NAME}
+  COMMAND ${CMAKE_COMMAND} -E create_symlink ${CMAKE_CURRENT_SOURCE_DIR}/src/aruco_utils.py ${CATKIN_DEVEL_PREFIX}/lib/${PROJECT_NAME}/aruco_utils.py
+  COMMAND ${CMAKE_COMMAND} -E touch ${CATKIN_DEVEL_PREFIX}/lib/${PROJECT_NAME}/__init__.py
+  COMMENT "Creating symbolic link for aruco_utils.py"
+)
+
+# Убедимся, что символические ссылки создаются после компиляции сообщений
+add_dependencies(create_aruco_symlinks ${PROJECT_NAME}_generate_messages)
+
 ## Install launch files
 install(DIRECTORY launch/
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch

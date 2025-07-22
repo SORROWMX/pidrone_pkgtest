@@ -25,5 +25,9 @@
   <exec_depend>message_runtime</exec_depend>
 
   <export>
+    <!-- Скрипт, который будет выполнен при установке пакета -->
+    <catkin_scripts>
+      <script>scripts/setup_aruco_links.py</script>
+    </catkin_scripts>
   </export>
 </package> 
