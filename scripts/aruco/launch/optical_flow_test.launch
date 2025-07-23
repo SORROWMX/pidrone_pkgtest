@@ -1,0 +1,25 @@
+<launch>
+    <!-- Nodelet manager -->
+    <node pkg="nodelet" type="nodelet" name="nodelet_manager" args="manager"/>
+
+    <!-- Camera node -->
+    <node pkg="nodelet" type="nodelet" name="main_camera" args="load cv_camera/CvCameraNodelet nodelet_manager">
+        <param name="frame_id" value="main_camera_optical"/>
+        <param name="camera_info_url" value="file://$(find aruco_pose)/test/camera_info.yaml" />
+        <param name="image_width" value="640"/>
+        <param name="image_height" value="480"/>
+    </node>
+
+    <!-- Optical Flow C++ node -->
+    <node pkg="nodelet" clear_params="true" type="nodelet" name="optical_flow" args="load optical_flow/optical_flow nodelet_manager" output="screen">
+        <remap from="image_raw" to="main_camera/image_raw"/>
+        <remap from="camera_info" to="main_camera/camera_info"/>
+        <param name="roi" value="128"/>
+        <param name="frame_id" value="base_link"/>
+    </node>
+
+    <!-- Image view for debug -->
+    <node pkg="image_view" type="image_view" name="optical_flow_debug" output="screen">
+        <remap from="image" to="optical_flow/debug"/>
+    </node>
+</launch> 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import rospy
 import time
@@ -13,6 +13,8 @@ from unavlib import MSPy
 # Format for MSP2_INAV_SET_ALTITUDE data
 # <fi: < (little endian), f (float - targetAltitude), B (uint8_t - mode)
 MSP2_ALTITUDE_FORMAT = '<fB'
+# Format with climb rate
+MSP2_ALTITUDE_FORMAT_WITH_RATE = '<ffB'  # targetAltitude, climbRate, mode
 
 # MSP codes for altitude control
 MSP2_INAV_SET_ALTITUDE = 0x2220  # 8736 decimal
@@ -59,7 +61,7 @@ class AltitudeController:
         self.target_altitude = rospy.get_param('~target_altitude', 1.0)  # Default target: 1 meter
         
         rospy.loginfo("Altitude Controller initialized")
-        rospy.loginfo(f"Default target altitude: {self.target_altitude} meters")
+        rospy.loginfo("Default target altitude: {} meters".format(self.target_altitude))
         
         # Print board capabilities
         self.print_board_info()
@@ -69,7 +71,7 @@ class AltitudeController:
         try:
             # Get board info
             if hasattr(self.board.board, 'SENSOR_DATA'):
-                rospy.loginfo(f"SENSOR_DATA available: {self.board.board.SENSOR_DATA}")
+                rospy.loginfo("SENSOR_DATA available: {}".format(self.board.board.SENSOR_DATA))
             else:
                 rospy.loginfo("SENSOR_DATA not available")
                 
@@ -78,39 +80,39 @@ class AltitudeController:
                 rospy.loginfo("MSPy.MSPCodes is available")
                 # Check if altitude control code exists
                 if 'MSP2_INAV_SET_ALTITUDE' in MSPy.MSPCodes:
-                    rospy.loginfo(f"MSP2_INAV_SET_ALTITUDE code: {MSPy.MSPCodes['MSP2_INAV_SET_ALTITUDE']}")
+                    rospy.loginfo("MSP2_INAV_SET_ALTITUDE code: {}".format(MSPy.MSPCodes['MSP2_INAV_SET_ALTITUDE']))
                 else:
                     rospy.loginfo("MSP2_INAV_SET_ALTITUDE code not found in MSPy.MSPCodes")
             else:
                 rospy.loginfo("MSPy.MSPCodes not available")
         except Exception as e:
-            rospy.logwarn(f"Could not print board info: {e}")
+            rospy.logwarn("Could not print board info: {}".format(e))
 
     def connect_to_fc(self):
         """Connect to the flight controller board"""
         try:
-            rospy.loginfo(f"Connecting to flight controller on {self.serial_port}")
+            rospy.loginfo("Connecting to flight controller on {}".format(self.serial_port))
             self.board = UAVControl(self.serial_port, self.baudrate, receiver="serial")
             self.board.connect()
             rospy.loginfo("Connected to flight controller")
         except Exception as e:
-            rospy.logerr(f"Failed to connect to flight controller: {e}")
+            rospy.logerr("Failed to connect to flight controller: {}".format(e))
             try:
                 # Try alternative port
                 alt_port = '/dev/ttyACM1'
-                rospy.loginfo(f"Trying alternative port {alt_port}")
+                rospy.loginfo("Trying alternative port {}".format(alt_port))
                 self.board = UAVControl(alt_port, self.baudrate, receiver="serial")
                 self.board.connect()
                 rospy.loginfo("Connected to flight controller on alternative port")
             except Exception as e:
-                rospy.logerr(f"Failed to connect to flight controller on alternative port: {e}")
+                rospy.logerr("Failed to connect to flight controller on alternative port: {}".format(e))
                 rospy.signal_shutdown("Could not connect to flight controller")
 
     def altitude_callback(self, msg):
         """Process incoming altitude data"""
         self.current_altitude = msg.range
         
-    def send_altitude_command(self, target_altitude, mode):
+    def send_altitude_command(self, target_altitude, mode, climb_rate=None):
         """Send altitude control command to flight controller"""
         if self.board is None:
             rospy.logerr("Cannot send altitude command: not connected to flight controller")
@@ -124,9 +126,17 @@ class AltitudeController:
             }
             
             # Pack data according to MSP protocol
-            packed_data = struct.pack(MSP2_ALTITUDE_FORMAT, 
-                                      altitude_data['targetAltitude'], 
-                                      altitude_data['mode'])
+            if climb_rate is not None:
+                # Use format with 9 bytes, including climb rate
+                packed_data = struct.pack(MSP2_ALTITUDE_FORMAT_WITH_RATE, 
+                                      float(target_altitude), 
+                                      float(climb_rate),
+                                      mode)
+            else:
+                # Use format with 5 bytes
+                packed_data = struct.pack(MSP2_ALTITUDE_FORMAT, 
+                                      float(target_altitude), 
+                                      mode)
             
             # Use direct board access for sending MSP commands
             msp_code = MSP2_INAV_SET_ALTITUDE
@@ -135,7 +145,10 @@ class AltitudeController:
             result = self.board.board.send_RAW_msg(msp_code, data=packed_data)
             
             if result > 0:
-                rospy.loginfo(f"Altitude command sent: mode={mode}, target={target_altitude}m")
+                if climb_rate is not None:
+                    rospy.loginfo("Altitude command sent: mode={}, target={}m, climb rate={}m/s".format(mode, target_altitude, climb_rate))
+                else:
+                    rospy.loginfo("Altitude command sent: mode={}, target={}m".format(mode, target_altitude))
                 
                 # Publish target altitude for visualization/monitoring
                 target_msg = Float32()
@@ -148,7 +161,7 @@ class AltitudeController:
                 return False
             
         except Exception as e:
-            rospy.logerr(f"Error sending altitude command: {e}")
+            rospy.logerr("Error sending altitude command: {}".format(e))
             import traceback
             rospy.logerr(traceback.format_exc())
             return False
@@ -157,30 +170,29 @@ class AltitudeController:
     
     def hold_current_altitude(self, req):
         """Service callback to hold current altitude"""
-        rospy.loginfo(f"Holding current altitude: {self.current_altitude:.2f}m")
+        rospy.loginfo("Holding current altitude: {:.2f}m".format(self.current_altitude))
         self.send_altitude_command(0.0, ROC_TO_ALT_CURRENT)
         return EmptyResponse()
     
     def constant_climb(self, req):
         """Service callback for constant climb"""
-        rospy.loginfo("Starting constant climb")
-        self.send_altitude_command(0.0, ROC_TO_ALT_CONSTANT)
+        climb_rate = rospy.get_param('~climb_rate', 0.5)  # m/s, positive value
+        rospy.loginfo("Starting constant climb at {} m/s".format(climb_rate))
+        self.send_altitude_command(0.0, ROC_TO_ALT_CONSTANT, climb_rate)
         return EmptyResponse()
     
     def constant_descent(self, req):
         """Service callback for constant descent"""
-        rospy.loginfo("Starting constant descent")
-        # For descent, we use the same mode but with negative values
-        # However, in INAV this is handled by stick input, not by this command
-        # So we're using the same command as climb and expecting INAV to handle it
-        self.send_altitude_command(0.0, ROC_TO_ALT_CONSTANT)
+        descent_rate = -rospy.get_param('~descent_rate', 0.5)  # m/s, negative value
+        rospy.loginfo("Starting constant descent at {} m/s".format(-descent_rate))
+        self.send_altitude_command(0.0, ROC_TO_ALT_CONSTANT, descent_rate)
         return EmptyResponse()
     
     def set_target_altitude(self, req):
         """Service callback to move to target altitude"""
         # Get the target altitude from parameter
         target = rospy.get_param('~target_altitude', 1.0)
-        rospy.loginfo(f"Moving to target altitude: {target}m")
+        rospy.loginfo("Moving to target altitude: {}m".format(target))
         self.send_altitude_command(target, ROC_TO_ALT_TARGET)
         return EmptyResponse()
     

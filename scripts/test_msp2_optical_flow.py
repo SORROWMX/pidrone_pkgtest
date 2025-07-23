@@ -7,7 +7,8 @@ import numpy as np
 import cv2
 from geometry_msgs.msg import TwistStamped
 from raspicam_node.msg import MotionVectors
-from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import CompressedImage, Image
+from cv_bridge import CvBridge
 from unavlib.control.uavcontrol import UAVControl
 from unavlib import MSPy
 
@@ -66,8 +67,11 @@ class OpticalFlowRelay:
         self.current_image = None
         self.orb = cv2.ORB_create(50)  # Use ORB with max 50 features
         
+        # CV Bridge for converting ROS images to OpenCV format
+        self.bridge = CvBridge()
+        
         # Subscribe to camera image
-        rospy.Subscriber('/raspicam_node/image/compressed', CompressedImage, self.image_callback, queue_size=1)
+        rospy.Subscriber('/main_camera/image_raw', Image, self.image_callback_raw, queue_size=1)
         
         # Timer for sending data to flight controller
         self.timer = rospy.Timer(rospy.Duration(1.0/self.update_rate), self.send_flow_data)
@@ -124,89 +128,103 @@ class OpticalFlowRelay:
                 rospy.logerr(f"Failed to connect to flight controller on alternative port: {e}")
                 rospy.signal_shutdown("Could not connect to flight controller")
 
+    def image_callback_raw(self, msg):
+        """Process incoming raw camera images and calculate optical flow"""
+        try:
+            # Convert ROS Image message to OpenCV format
+            image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='mono8')
+            self.process_image(image)
+        except Exception as e:
+            rospy.logerr(f"Error processing raw image: {e}")
+            if self.debug:
+                import traceback
+                rospy.logerr(traceback.format_exc())
+
     def image_callback(self, msg):
-        """Process incoming camera images and calculate optical flow"""
+        """Process incoming compressed camera images and calculate optical flow"""
         try:
             # Convert compressed image to OpenCV format
             np_arr = np.fromstring(msg.data, np.uint8)
             image = cv2.imdecode(np_arr, cv2.IMREAD_GRAYSCALE)
+            self.process_image(image)
+        except Exception as e:
+            rospy.logerr(f"Error processing compressed image: {e}")
+            if self.debug:
+                import traceback
+                rospy.logerr(traceback.format_exc())
+                
+    def process_image(self, image):
+        """Process image and calculate optical flow"""
+        # Store first image
+        if self.prev_image is None:
+            self.prev_image = image
+            return
             
-            # Store first image
-            if self.prev_image is None:
-                self.prev_image = image
-                return
-                
-            # Calculate time delta since last update
-            now = rospy.Time.now()
-            dt = (now - self.last_update_time).to_sec()
-            self.last_update_time = now
+        # Calculate time delta since last update
+        now = rospy.Time.now()
+        dt = (now - self.last_update_time).to_sec()
+        self.last_update_time = now
+        
+        # Skip if dt is too large (first reading or long delay)
+        if dt > 0.1:
+            dt = 0.025  # Use default value for first reading or long delays
             
-            # Skip if dt is too large (first reading or long delay)
-            if dt > 0.1:
-                dt = 0.025  # Use default value for first reading or long delays
-                
-            # Detect features in both images
-            kp1, des1 = self.orb.detectAndCompute(self.prev_image, None)
-            kp2, des2 = self.orb.detectAndCompute(image, None)
+        # Detect features in both images
+        kp1, des1 = self.orb.detectAndCompute(self.prev_image, None)
+        kp2, des2 = self.orb.detectAndCompute(image, None)
+        
+        # If we have features in both images
+        if kp1 and kp2 and des1 is not None and des2 is not None:
+            # Match features using Brute Force matcher
+            bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+            matches = bf.match(des1, des2)
             
-            # If we have features in both images
-            if kp1 and kp2 and des1 is not None and des2 is not None:
-                # Match features using Brute Force matcher
-                bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-                matches = bf.match(des1, des2)
+            # Sort matches by distance (lower is better)
+            matches = sorted(matches, key=lambda x: x.distance)
+            
+            # Filter matches by distance threshold
+            good_matches = [m for m in matches if m.distance < 38]
+            
+            if len(good_matches) >= 3:
+                # Extract matched keypoints
+                src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+                dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
                 
-                # Sort matches by distance (lower is better)
-                matches = sorted(matches, key=lambda x: x.distance)
-                
-                # Filter matches by distance threshold
-                good_matches = [m for m in matches if m.distance < 38]
-                
+                # Calculate rigid transformation
                 if len(good_matches) >= 3:
-                    # Extract matched keypoints
-                    src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-                    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+                    # Calculate average displacement
+                    displacement = np.mean(src_pts.reshape(-1, 2) - dst_pts.reshape(-1, 2), axis=0)
                     
-                    # Calculate rigid transformation
-                    if len(good_matches) >= 3:
-                        # Calculate average displacement
-                        displacement = np.mean(src_pts.reshape(-1, 2) - dst_pts.reshape(-1, 2), axis=0)
-                        
-                        # Convert to angular displacement in radians
-                        # Using small angle approximation: angle ≈ displacement/focal_length
-                        self.last_motion_x = float(displacement[0] / self.FOCAL_LENGTH_PX)
-                        self.last_motion_y = float(displacement[1] / self.FOCAL_LENGTH_PX)
-                        
-                        # Set quality based on number of good matches
-                        match_quality = min(255, int(len(good_matches) * 5))
-                        self.last_quality = match_quality
-                    else:
-                        self.last_motion_x = 0.0
-                        self.last_motion_y = 0.0
-                        self.last_quality = 0
+                    # Convert to angular displacement in radians
+                    # Using small angle approximation: angle ≈ displacement/focal_length
+                    self.last_motion_x = float(displacement[0] / self.FOCAL_LENGTH_PX)
+                    self.last_motion_y = float(displacement[1] / self.FOCAL_LENGTH_PX)
+                    
+                    # Set quality based on number of good matches
+                    match_quality = min(255, int(len(good_matches) * 5))
+                    self.last_quality = match_quality
                 else:
-                    # Not enough good matches
                     self.last_motion_x = 0.0
                     self.last_motion_y = 0.0
                     self.last_quality = 0
             else:
-                # No features detected
+                # Not enough good matches
                 self.last_motion_x = 0.0
                 self.last_motion_y = 0.0
                 self.last_quality = 0
-            
-            # Log flow data occasionally and only in debug mode
-            if self.debug and (now - self.last_send_time).to_sec() >= 1.0:  # Log once per second
-                rospy.loginfo(f"Flow: X={self.last_motion_x:.6f}, Y={self.last_motion_y:.6f}, quality={self.last_quality}")
-                self.last_send_time = now
-            
-            # Update previous image
-            self.prev_image = image
-            
-        except Exception as e:
-            rospy.logerr(f"Error processing image: {e}")
-            if self.debug:
-                import traceback
-                rospy.logerr(traceback.format_exc())
+        else:
+            # No features detected
+            self.last_motion_x = 0.0
+            self.last_motion_y = 0.0
+            self.last_quality = 0
+        
+        # Log flow data occasionally and only in debug mode
+        if self.debug and (now - self.last_send_time).to_sec() >= 1.0:  # Log once per second
+            rospy.loginfo(f"Flow: X={self.last_motion_x:.6f}, Y={self.last_motion_y:.6f}, quality={self.last_quality}")
+            self.last_send_time = now
+        
+        # Update previous image
+        self.prev_image = image
 
     def send_flow_data(self, event=None):
         """Send optical flow data to flight controller"""

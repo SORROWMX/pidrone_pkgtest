@@ -938,7 +938,7 @@ function connect() {
 
   function imageStream() {
     var image = document.getElementById('cameraImage');
-    image.src = "http://" + document.getElementById('hostname').value + ":8080/stream?topic=/raspicam_node/image&quality=70&type=ros_compressed";
+    image.src = "http://" + document.getElementById('hostname').value + ":8080/stream?topic=/main_camera/image_raw&quality=70&type=ros_compressed";
     
     // Добавляем поток ArUco маркеров
     var arucoImage = document.getElementById('arucoDebugImage');
@@ -2252,11 +2252,6 @@ function setupArucoRefresh() {
             // Добавляем временную метку для предотвращения кэширования
             arucoImage.src = "http://" + document.getElementById('hostname').value + ":8080/stream?topic=/aruco_detect/debug&quality=70&type=ros_compressed&t=" + new Date().getTime();
             
-            // Добавляем анимацию обновления
-            $('#arucoDebugImage').addClass('aruco-refreshing');
-            setTimeout(function() {
-                $('#arucoDebugImage').removeClass('aruco-refreshing');
-            }, 1000);
         }
     }, 2000); // Обновление каждые 2 секунды
 }

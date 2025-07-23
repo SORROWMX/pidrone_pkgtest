@@ -1,0 +1,19 @@
+<launch>
+    <node pkg="nodelet" type="nodelet" name="nodelet_manager" args="manager" unless="$(eval arg('standalone'))"/>
+
+    <!-- Optical Flow C++ node -->
+    <node pkg="nodelet" clear_params="true" type="nodelet" name="optical_flow" 
+          args="$(eval 'standalone optical_flow/optical_flow' if arg('standalone') else 'load optical_flow/optical_flow nodelet_manager')">
+        <remap from="image_raw" to="main_camera/image_raw"/>
+        <remap from="camera_info" to="main_camera/camera_info"/>
+        <param name="roi" value="128"/>
+    </node>
+
+    <!-- INAV Flow Relay Python node -->
+    <node pkg="pidrone_pkg" type="inav_flow_relay.py" name="inav_flow_relay" output="screen">
+        <param name="debug" value="true"/>
+        <param name="update_rate" value="40"/>
+    </node>
+    
+    <arg name="standalone" default="false" />
+</launch> 
