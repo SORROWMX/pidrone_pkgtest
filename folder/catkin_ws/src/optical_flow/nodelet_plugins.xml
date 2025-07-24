@@ -1,0 +1,7 @@
+<library path="lib/liboptical_flow">
+  <class name="optical_flow/optical_flow" type="OpticalFlow" base_class_type="nodelet::Nodelet">
+    <description>
+      Optical flow nodelet for INAV
+    </description>
+  </class>
+</library> 

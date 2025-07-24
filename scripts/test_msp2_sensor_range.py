@@ -3,6 +3,10 @@
 import rospy
 import time
 import struct
+import os
+import glob
+import serial
+from serial.serialutil import SerialException
 from sensor_msgs.msg import Range
 from unavlib.control.uavcontrol import UAVControl
 from unavlib import MSPy
@@ -31,9 +35,15 @@ class RangefinderRelay:
         self.baudrate = rospy.get_param('~baudrate', 115200)
         self.update_rate = rospy.get_param('~update_rate', 40)  # Hz - increased to 40Hz for better performance
         self.debug = rospy.get_param('~debug', False)  # Debug mode disabled by default
+        self.reconnect_delay = rospy.get_param('~reconnect_delay', 1.0)  # Seconds between reconnection attempts
+        
+        # Connection state
+        self.board = None
+        self.connected = False
+        self.last_reconnect_attempt = 0
+        self.connection_attempts = 0
         
         # Connect to flight controller
-        self.board = None
         self.connect_to_fc()
         
         # Last received range data
@@ -49,12 +59,28 @@ class RangefinderRelay:
         rospy.loginfo("Rangefinder relay initialized")
         
         # Print board capabilities only in debug mode
-        if self.debug:
+        if self.debug and self.connected:
             self.print_board_info()
         
         # Tracking successful sends
         self.send_count = 0
         self.last_send_time = rospy.Time.now()
+
+    def find_available_ports(self):
+        """Find all available ttyACM ports"""
+        ports = []
+        for port in glob.glob('/dev/ttyACM*'):
+            ports.append(port)
+        return ports
+    
+    def is_port_available(self, port):
+        """Check if a port is available"""
+        try:
+            s = serial.Serial(port)
+            s.close()
+            return True
+        except:
+            return False
 
     def print_board_info(self):
         """Print board information for debugging"""
@@ -79,24 +105,56 @@ class RangefinderRelay:
             rospy.logwarn(f"Could not print board info: {e}")
 
     def connect_to_fc(self):
-        """Connect to the flight controller board"""
+        """Connect to the flight controller board with improved error handling"""
+        # Don't try to reconnect too frequently
+        current_time = time.time()
+        if current_time - self.last_reconnect_attempt < self.reconnect_delay:
+            return False
+        
+        self.last_reconnect_attempt = current_time
+        self.connection_attempts += 1
+        
+        # First try the specified port
+        if self.try_connect(self.serial_port):
+            return True
+            
+        # If that fails, try to find any available ttyACM port
+        ports = self.find_available_ports()
+        rospy.loginfo(f"Found available ports: {ports}")
+        
+        for port in ports:
+            if port != self.serial_port and self.try_connect(port):
+                # Update the default port if we successfully connect to a different one
+                self.serial_port = port
+                return True
+        
+        # Log if all connection attempts failed
+        rospy.logerr("Failed to connect to any available port")
+        return False
+    
+    def try_connect(self, port):
+        """Try to connect to a specific port"""
         try:
-            rospy.loginfo(f"Connecting to flight controller on {self.serial_port}")
-            self.board = UAVControl(self.serial_port, self.baudrate, receiver="serial")
+            # If we already have a board object, try to disconnect first
+            if self.board is not None:
+                try:
+                    self.board.disconnect()
+                except:
+                    pass
+                    
+            rospy.loginfo(f"Connecting to flight controller on {port}")
+            self.board = UAVControl(port, self.baudrate, receiver="serial")
             self.board.connect()
-            rospy.loginfo("Connected to flight controller")
+            rospy.loginfo(f"Successfully connected to flight controller on {port}")
+            
+            self.connected = True
+            self.connection_attempts = 0
+            return True
+                
         except Exception as e:
-            rospy.logerr(f"Failed to connect to flight controller: {e}")
-            try:
-                # Try alternative port
-                alt_port = '/dev/ttyACM1'
-                rospy.loginfo(f"Trying alternative port {alt_port}")
-                self.board = UAVControl(alt_port, self.baudrate, receiver="serial")
-                self.board.connect()
-                rospy.loginfo("Connected to flight controller on alternative port")
-            except Exception as e:
-                rospy.logerr(f"Failed to connect to flight controller on alternative port: {e}")
-                rospy.signal_shutdown("Could not connect to flight controller")
+            rospy.logerr(f"Failed to connect to flight controller on {port}: {e}")
+            self.connected = False
+            return False
 
     def range_callback(self, msg):
         """Process incoming rangefinder data"""
@@ -121,7 +179,12 @@ class RangefinderRelay:
 
     def send_range_data(self, event=None):
         """Send rangefinder data to flight controller"""
-        if self.last_range is None or self.board is None:
+        # If not connected or no board, try to reconnect
+        if not self.connected or self.board is None:
+            self.connect_to_fc()
+            return
+            
+        if self.last_range is None:
             return
             
         try:
@@ -157,9 +220,17 @@ class RangefinderRelay:
                 # Always log failures
                 rospy.logwarn("Failed to send rangefinder data")
             
+        except SerialException as e:
+            rospy.logerr(f"Serial port error: {e}")
+            self.connected = False
+            rospy.loginfo("Port disconnected, will try to reconnect")
+            
         except Exception as e:
             rospy.logerr(f"Error sending rangefinder data: {e}")
-            if self.debug:
+            if "Attempting to use a port that is not open" in str(e):
+                self.connected = False
+                rospy.loginfo("Port not open, will try to reconnect")
+            elif self.debug:
                 import traceback
                 rospy.logerr(traceback.format_exc())
             
